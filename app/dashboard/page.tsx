@@ -11,6 +11,7 @@ export default async function DashboardPage() {
 
   if (!user) {
     redirect('/login')
+    return null
   }
 
   // Fetch profile

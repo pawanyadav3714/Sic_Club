@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserProfile, Announcement, MembershipApplication, ProjectSubmission } from '../types';
+import { UserProfile, Announcement, MembershipApplication, ProjectSubmission, UserRole } from '../types';
 import {
   supabase,
   isSupabaseConfigured,
@@ -182,6 +182,7 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
     const handleProfileUpdate = (e: any) => {
       if (e.detail) {
         setActiveUser(e.detail);
+        setActiveRole(e.detail.role);
       }
     };
     window.addEventListener('sic_user_profile_updated', handleProfileUpdate);
@@ -378,13 +379,13 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
 
 
   // Local role state so status changes instantly on approval
-  const [activeRole, setActiveRole] = useState<UserProfile['role']>(currentUser.role);
+  const [activeRole, setActiveRole] = useState<UserRole>(currentUser.role as UserRole);
   const [checkingStatus, setCheckingStatus] = useState(false);
   const [statusFeedback, setStatusFeedback] = useState<string>('');
 
   useEffect(() => {
-    setActiveRole(currentUser.role);
-  }, [currentUser?.role]);
+    setActiveRole(activeUser.role);
+  }, [activeUser.role]);
 
   // Live status check function
   const handleCheckStatus = async () => {
@@ -925,7 +926,7 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
             <div className="space-y-6">
               
               {/* PENDING / REJECTED STATUS BANNER */}
-              {currentUser.role === 'pending' && (
+              {['pending'].includes(activeRole) && (
                 <div className="p-4 sm:p-5 rounded-[24px] bg-gradient-to-r from-amber-500/20 via-orange-500/15 to-amber-600/20 border-2 border-amber-400/50 shadow-lg text-amber-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black text-lg shrink-0 shadow-md animate-pulse">

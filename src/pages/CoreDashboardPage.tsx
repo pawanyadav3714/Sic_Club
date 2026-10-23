@@ -17,6 +17,9 @@ import {
   setMockUser,
   getMockUser,
   fixProfileName,
+  saveUserAvatar,
+  upsertCoreMemberToDatabase,
+  compressImage,
   resetStudentProfilesToDefaults
 } from '../lib/supabase';
 import DirectChatWorkspace from '../components/DirectChatWorkspace';
@@ -70,7 +73,8 @@ import {
   User,
   Phone,
   MessageSquare,
-  MessagesSquare
+  MessagesSquare,
+  Camera
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -187,8 +191,14 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
       }
     };
 
+    const handleProfileUpdate = () => {
+      loadData();
+    };
+
     window.addEventListener('sic_announcements_updated', handleNoticeUpdate);
+    window.addEventListener('sic_user_profile_updated', handleProfileUpdate);
     window.addEventListener('storage', handleNoticeUpdate);
+    window.addEventListener('storage', handleProfileUpdate);
 
     let channel: any = null;
     if (isSupabaseConfigured && supabase) {
@@ -208,7 +218,9 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
 
     return () => {
       window.removeEventListener('sic_announcements_updated', handleNoticeUpdate);
+      window.removeEventListener('sic_user_profile_updated', handleProfileUpdate);
       window.removeEventListener('storage', handleNoticeUpdate);
+      window.removeEventListener('storage', handleProfileUpdate);
       if (bc) bc.close();
       if (channel && supabase) {
         supabase.removeChannel(channel);
@@ -730,6 +742,67 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
     showNotification(`Core Member ${newCore.first_name} ${newCore.last_name} added to Core Council!`, 'success');
   };
 
+  // ADMIN ACTION: Upload/Change Profile Photo
+  const handleCoreProfileAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      showNotification('Please choose an image under 10MB.', 'danger');
+      return;
+    }
+
+    try {
+      // Compress image file to a lightweight Base64 string (~20KB)
+      const compressedBase64 = await compressImage(file, 300, 300, 0.75);
+      if (!compressedBase64) return;
+
+      saveUserAvatar(activeCoreUser.id, compressedBase64);
+      if (activeCoreUser.email) saveUserAvatar(activeCoreUser.email, compressedBase64);
+
+      const updatedUser: UserProfile = {
+        ...activeCoreUser,
+        avatar_url: compressedBase64,
+      };
+
+      setActiveCoreUser(updatedUser);
+      saveCoreMember(updatedUser);
+      setMockUser(updatedUser);
+
+      // Update core Council roster list state
+      setCoreCouncilList(prev => prev.map(c => 
+        (c.id === updatedUser.id || (c.email && updatedUser.email && c.email.toLowerCase() === updatedUser.email.toLowerCase()))
+          ? updatedUser
+          : c
+      ));
+
+      try {
+        await upsertCoreMemberToDatabase({
+          id: updatedUser.id,
+          email: updatedUser.email,
+          first_name: updatedUser.first_name,
+          last_name: updatedUser.last_name,
+          phone_no: updatedUser.phone_no,
+          branch: updatedUser.branch,
+          session: updatedUser.session,
+          registration_no: updatedUser.registration_no,
+          domain: updatedUser.domain || updatedUser.designation || 'Club Administration',
+          designation: updatedUser.designation,
+          avatar_url: compressedBase64,
+          role: 'core_member',
+          created_at: updatedUser.created_at,
+        });
+      } catch (err) {}
+
+      window.dispatchEvent(new CustomEvent('sic_user_profile_updated', { detail: updatedUser }));
+      confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
+      showNotification('Profile photo updated and permanently saved!', 'success');
+    } catch (err) {
+      console.warn('Image processing error:', err);
+    }
+    if (e.target) e.target.value = '';
+  };
+
   // Filtered lists
   const filteredApps = applications.filter((app) => {
     const u = app.user;
@@ -915,9 +988,17 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
             className="flex items-center gap-2 truncate text-left cursor-pointer hover:opacity-80 transition-opacity"
             title="Open Core-members"
           >
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-600 via-indigo-600 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-md border border-white/30 shrink-0 relative">
-              {activeCoreUser.first_name ? `${activeCoreUser.first_name[0]}${activeCoreUser.last_name ? activeCoreUser.last_name[0] : ''}` : 'SP'}
-            </div>
+            {activeCoreUser.avatar_url ? (
+              <img
+                src={activeCoreUser.avatar_url}
+                alt={activeCoreUser.first_name}
+                className="w-8 h-8 rounded-full object-cover shadow-md border border-white/30 shrink-0"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-600 via-indigo-600 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-md border border-white/30 shrink-0 relative">
+                {activeCoreUser.first_name ? `${activeCoreUser.first_name[0]}${activeCoreUser.last_name ? activeCoreUser.last_name[0] : ''}` : 'SP'}
+              </div>
+            )}
             <div className="truncate">
               <p className="text-xs font-black text-slate-900 truncate">{activeCoreUser.first_name} {activeCoreUser.last_name}</p>
               <p className="text-[10px] text-purple-200 font-semibold truncate">{activeCoreUser.designation || 'Core Council'}</p>
@@ -959,10 +1040,14 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
               <div className="relative">
                 <button
                   onClick={() => setShowLogoutPopover(!showLogoutPopover)}
-                  className="w-14 h-14 rounded-full bg-gradient-to-tr from-[#6366f1] via-[#8b5cf6] to-[#a855f7] text-white font-black text-lg flex items-center justify-center shadow-[0_10px_25px_rgba(99,102,241,0.5),inset_2px_2px_4px_rgba(255,255,255,0.6),inset_-2px_-2px_6px_rgba(0,0,0,0.3)] border-4 border-[#f0f4f8] cursor-pointer hover:scale-105 active:scale-95 transition-all"
+                  className="w-14 h-14 rounded-full bg-gradient-to-tr from-[#6366f1] via-[#8b5cf6] to-[#a855f7] text-white font-black text-lg flex items-center justify-center shadow-[0_10px_25px_rgba(99,102,241,0.5),inset_2px_2px_4px_rgba(255,255,255,0.6),inset_-2px_-2px_6px_rgba(0,0,0,0.3)] border-4 border-[#f0f4f8] cursor-pointer hover:scale-105 active:scale-95 transition-all overflow-hidden shrink-0"
                   title="Profile Menu"
                 >
-                  <span>{activeCoreUser.first_name ? activeCoreUser.first_name[0] : 'S'}</span>
+                  {activeCoreUser.avatar_url ? (
+                    <img src={activeCoreUser.avatar_url} alt={activeCoreUser.first_name} className="w-full h-full object-cover" />
+                  ) : (
+                    <span>{activeCoreUser.first_name ? activeCoreUser.first_name[0] : 'S'}</span>
+                  )}
                 </button>
 
                 {/* Lightweight Floated Logout Popover */}
@@ -974,10 +1059,29 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
                       className="absolute right-0 top-16 w-48 p-2 rounded-2xl bg-[#1e293b] text-white shadow-2xl border border-white/20 z-50 backdrop-blur-xl"
                     >
-                      <div className="px-3 py-2 border-b border-white/10 mb-1">
-                        <p className="text-xs font-black truncate">{activeCoreUser.first_name} {activeCoreUser.last_name}</p>
-                        <p className="text-[10px] text-cyan-400 truncate">{activeCoreUser.email}</p>
+                      <div className="px-3 py-2 border-b border-white/10 mb-1 flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center overflow-hidden shrink-0 border border-white/30">
+                          {activeCoreUser.avatar_url ? (
+                            <img src={activeCoreUser.avatar_url} alt={activeCoreUser.first_name} className="w-full h-full object-cover" />
+                          ) : (
+                            <span className="text-xs font-black">{activeCoreUser.first_name ? activeCoreUser.first_name[0] : 'S'}</span>
+                          )}
+                        </div>
+                        <div className="truncate">
+                          <p className="text-xs font-black truncate">{activeCoreUser.first_name} {activeCoreUser.last_name}</p>
+                          <p className="text-[10px] text-cyan-400 truncate">{activeCoreUser.email}</p>
+                        </div>
                       </div>
+                      <button
+                        onClick={() => {
+                          setShowLogoutPopover(false);
+                          setShowProfileModal(true);
+                        }}
+                        className="w-full py-2 px-3 rounded-xl hover:bg-white/10 text-slate-200 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer mb-1"
+                      >
+                        <Camera className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>Edit Profile & Photo</span>
+                      </button>
                       <button
                         onClick={() => {
                           setShowLogoutPopover(false);
@@ -1480,9 +1584,9 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
                           <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-cyan-500 p-[2px] shrink-0 shadow-[0_6px_16px_rgba(16,185,129,0.3)] border border-white">
                             <div className="w-full h-full rounded-[14px] bg-[#0d1527] overflow-hidden flex items-center justify-center font-black text-white text-base shadow-[inset_2px_2px_4px_rgba(0,0,0,0.5)]">
                               {m.avatar_url ? (
-                                <img src={m.avatar_url} alt="Member" className="w-full h-full object-cover" />
+                                <img src={m.avatar_url} alt={`${m.first_name || ''} ${m.last_name || ''}`} className="w-full h-full object-cover" />
                               ) : (
-                                `${m.first_name[0]}${m.last_name[0]}`
+                                `${m.first_name ? m.first_name[0] : ''}${m.last_name ? m.last_name[0] : ''}`
                               )}
                             </div>
                           </div>
@@ -1922,15 +2026,45 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
             className="w-full max-w-lg p-6 sm:p-8 rounded-3xl glass-panel space-y-6 relative shadow-2xl border border-white/30"
           >
-            {/* Header / Close button */}
+            {/* Header / Profile Picture Upload */}
             <div className="flex items-center justify-between border-b border-white/10 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 text-slate-900 font-black text-base flex items-center justify-center glass-badge shadow-lg border border-white/40">
-                  {activeCoreUser.first_name ? `${activeCoreUser.first_name[0]}${activeCoreUser.last_name ? activeCoreUser.last_name[0] : ''}` : 'SP'}
+              <div className="flex items-center gap-4">
+                <div className="relative group shrink-0">
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 text-white font-black text-lg flex items-center justify-center shadow-lg border-2 border-white/40 overflow-hidden">
+                    {activeCoreUser.avatar_url ? (
+                      <img src={activeCoreUser.avatar_url} alt="Core Member Profile" className="w-full h-full object-cover" />
+                    ) : activeCoreUser.first_name ? (
+                      `${activeCoreUser.first_name[0]}${activeCoreUser.last_name ? activeCoreUser.last_name[0] : ''}`
+                    ) : (
+                      'SP'
+                    )}
+                  </div>
+                  <label
+                    htmlFor="core-profile-avatar-input"
+                    className="absolute inset-0 bg-black/60 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white cursor-pointer"
+                    title="Change Profile Photo"
+                  >
+                    <Camera className="w-5 h-5" />
+                    <span className="text-[9px] font-bold mt-0.5">Edit</span>
+                  </label>
+                  <input
+                    type="file"
+                    id="core-profile-avatar-input"
+                    accept="image/*"
+                    onChange={handleCoreProfileAvatarUpload}
+                    className="hidden"
+                  />
                 </div>
                 <div>
                   <h3 className="text-lg font-black text-slate-900">{activeCoreUser.first_name} {activeCoreUser.last_name}</h3>
                   <p className="text-xs text-cyan-800 font-medium">{activeCoreUser.designation || 'Core Council Member'}</p>
+                  <label
+                    htmlFor="core-profile-avatar-input"
+                    className="mt-1.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-900 border border-indigo-500/30 text-[11px] font-extrabold cursor-pointer transition-all"
+                  >
+                    <Camera className="w-3.5 h-3.5 text-indigo-700" />
+                    <span>Choose Profile Picture</span>
+                  </label>
                 </div>
               </div>
               <button

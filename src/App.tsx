@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserProfile } from './types';
-import { supabase, getMockUser, setMockUser, upsertCoreMemberToDatabase, upsertStudentProfileToDatabase, fetchLiveAnnouncements } from './lib/supabase';
+import { supabase, getMockUser, setMockUser, upsertCoreMemberToDatabase, upsertStudentProfileToDatabase, fetchLiveAnnouncements, fixProfileName, getUserAvatar, saveUserAvatar } from './lib/supabase';
 import { fetchLiveEvents } from './lib/eventStorage';
 import LandingPage from './pages/LandingPage';
 import StudentAuthPage from './pages/StudentAuthPage';
@@ -13,6 +13,21 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => getMockUser());
   const [currentRoute, setCurrentRoute] = useState<string>('landing');
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const handleProfileUpdate = (e: any) => {
+      if (e.detail) {
+        setCurrentUser((prev) => (prev ? { ...prev, ...e.detail } : e.detail));
+        setMockUser(e.detail);
+      }
+    };
+    window.addEventListener('sic_user_profile_updated', handleProfileUpdate);
+    window.addEventListener('storage', handleProfileUpdate);
+    return () => {
+      window.removeEventListener('sic_user_profile_updated', handleProfileUpdate);
+      window.removeEventListener('storage', handleProfileUpdate);
+    };
+  }, []);
 
   useEffect(() => {
     // Sync live events and announcements from database to purge any stale local cache
@@ -68,12 +83,17 @@ export default function App() {
             return;
         }
 
-        const coreUser: UserProfile = {
+        const coreUser: UserProfile = fixProfileName({
           ...coreRecord,
           role: 'core_member',
-          avatar_url: sessionUser.user_metadata?.avatar_url || sessionUser.user_metadata?.picture || '',
+          avatar_url: getUserAvatar(coreRecord.id) || getUserAvatar(coreRecord.email) || coreRecord.avatar_url || sessionUser.user_metadata?.avatar_url || sessionUser.user_metadata?.picture || '',
           created_at: coreRecord.created_at || new Date().toISOString()
-        };
+        });
+
+        if (coreUser.avatar_url) {
+          saveUserAvatar(coreUser.id, coreUser.avatar_url);
+          if (coreUser.email) saveUserAvatar(coreUser.email, coreUser.avatar_url);
+        }
 
 
         try {
@@ -113,7 +133,7 @@ export default function App() {
           const regData = JSON.parse(pendingRegStr);
           localStorage.removeItem('sic_pending_registration');
 
-          const googleProfile: UserProfile = {
+          const googleProfile: UserProfile = fixProfileName({
             id: sessionUser.id,
             first_name: regData.first_name || sessionUser.user_metadata?.first_name || sessionUser.user_metadata?.full_name?.split(' ')[0] || sessionUser.email?.split('@')[0] || 'Student',
             last_name: regData.last_name || sessionUser.user_metadata?.last_name || sessionUser.user_metadata?.full_name?.split(' ').slice(1).join(' ') || 'Member',
@@ -123,11 +143,16 @@ export default function App() {
             session: regData.session || '2025-2029',
             domain: regData.domain || 'Tech / Coding',
             past_project_repo: regData.past_project_repo || '',
-            avatar_url: sessionUser.user_metadata?.avatar_url || sessionUser.user_metadata?.picture || '',
+            avatar_url: getUserAvatar(sessionUser.id) || getUserAvatar(sessionUser.email) || regData.avatar_url || sessionUser.user_metadata?.avatar_url || sessionUser.user_metadata?.picture || '',
             role: 'pending',
             auth_provider: 'google',
             created_at: new Date().toISOString()
-          };
+          });
+
+          if (googleProfile.avatar_url) {
+            saveUserAvatar(googleProfile.id, googleProfile.avatar_url);
+            if (googleProfile.email) saveUserAvatar(googleProfile.email, googleProfile.avatar_url);
+          }
 
           // Also persist in sic_registered_users
           try {
@@ -246,7 +271,10 @@ export default function App() {
       }
 
       // USER IS AN EXISTING REGISTERED USER!
-      const userProfile: UserProfile = { ...profile };
+      const userProfile: UserProfile = fixProfileName({
+        ...profile,
+        avatar_url: getUserAvatar(profile.id) || getUserAvatar(profile.email) || profile.avatar_url || sessionUser.user_metadata?.avatar_url || sessionUser.user_metadata?.picture || ''
+      });
 
       // Determine if user is an Admin or Core Council Member
       // STRICT DATABASE CHECK
@@ -370,9 +398,14 @@ export default function App() {
   };
 
   const handleLoginSuccess = (user: UserProfile) => {
-    setCurrentUser(user);
-    setMockUser(user);
-    if (user.role === 'core_member') {
+    const fixedUser = fixProfileName(user);
+    if (fixedUser.avatar_url) {
+      saveUserAvatar(fixedUser.id, fixedUser.avatar_url);
+      if (fixedUser.email) saveUserAvatar(fixedUser.email, fixedUser.avatar_url);
+    }
+    setCurrentUser(fixedUser);
+    setMockUser(fixedUser);
+    if (fixedUser.role === 'core_member') {
       setCurrentRoute('core-dashboard');
     } else {
       setCurrentRoute('dashboard');

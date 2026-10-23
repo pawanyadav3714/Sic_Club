@@ -19,7 +19,7 @@ export default function Navbar({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
 
-  const isGoogleUser = currentUser?.avatar_url && (currentUser.avatar_url.includes('googleusercontent.com') || currentUser.avatar_url.includes('google'));
+  const hasAvatar = Boolean(currentUser?.avatar_url && currentUser.avatar_url.trim().length > 0);
 
   const getInitials = () => {
     if (!currentUser) return 'U';
@@ -41,12 +41,12 @@ export default function Navbar({
                 onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
                 className="flex items-center gap-3 cursor-pointer group py-1"
               >
-                {/* Multicolor Glowing Border with Google Profile Picture or Initials */}
-                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-cyan-400 via-purple-500 to-pink-500 p-[2px] shadow-lg shadow-purple-500/30 group-hover:shadow-purple-500/60 transition-all flex-shrink-0">
-                  {isGoogleUser ? (
+                {/* Multicolor Glowing Border with Profile Picture or Initials */}
+                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-cyan-400 via-purple-500 to-pink-500 p-[2px] shadow-lg shadow-purple-500/30 group-hover:shadow-purple-500/60 transition-all flex-shrink-0 overflow-hidden">
+                  {hasAvatar ? (
                     <img
                       src={currentUser.avatar_url!}
-                      alt="Google Profile"
+                      alt="Profile"
                       className="w-full h-full rounded-full object-cover"
                     />
                   ) : (
@@ -65,11 +65,11 @@ export default function Navbar({
               {profileDropdownOpen && (
                 <div className="absolute right-0 mt-3 w-72 rounded-2xl bg-slate-900 border border-purple-500/40 shadow-2xl p-4 z-50 space-y-4 backdrop-blur-xl animate-fadeIn">
                   <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-cyan-400 via-purple-500 to-pink-500 p-[2px] flex-shrink-0">
-                      {isGoogleUser ? (
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-cyan-400 via-purple-500 to-pink-500 p-[2px] flex-shrink-0 overflow-hidden">
+                      {hasAvatar ? (
                         <img
                           src={currentUser.avatar_url!}
-                          alt="Google Profile"
+                          alt="Profile"
                           className="w-full h-full rounded-full object-cover"
                         />
                       ) : (

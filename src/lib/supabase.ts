@@ -87,7 +87,7 @@ export async function fetchLiveCoreMembers(): Promise<UserProfile[]> {
       const { data, error } = await supabase.from('core_members').select('*').order('created_at', { ascending: false });
       if (!error && data) {
         const liveCore: UserProfile[] = data.map(c => fixProfileName({ ...c, role: 'core_member' }));
-        localStorage.setItem('sic_core_members', JSON.stringify(liveCore));
+        safeSetLocalStorage('sic_core_members', JSON.stringify(liveCore));
         return liveCore;
       }
     } catch (e) {
@@ -106,7 +106,7 @@ export async function fetchLiveStudentProfiles(): Promise<UserProfile[]> {
           ...s,
           role: s.status === 'approved' ? ('member' as const) : s.status === 'rejected' ? ('rejected' as const) : ('pending' as const)
         }));
-        localStorage.setItem('sic_registered_users', JSON.stringify(liveStudents));
+        safeSetLocalStorage('sic_registered_users', JSON.stringify(liveStudents));
         return liveStudents;
       }
     } catch (e) {
@@ -124,7 +124,7 @@ export function saveCoreMember(member: UserProfile) {
     const idx = list.findIndex(m => m.id === fixed.id || m.email?.toLowerCase() === fixed.email?.toLowerCase());
     if (idx >= 0) list[idx] = fixed;
     else list.push(fixed);
-    localStorage.setItem('sic_core_members', JSON.stringify(list.map(fixProfileName)));
+    safeSetLocalStorage('sic_core_members', JSON.stringify(list.map(fixProfileName)));
   } catch (e) {}
 }
 
@@ -134,7 +134,7 @@ export function toggleCoreMemberStatus(id: string): UserProfile[] {
     const target = list.find((m) => m.id === id);
     if (target) {
       target.core_status = target.core_status === 'upcoming' ? 'enrolled' : 'upcoming';
-      localStorage.setItem('sic_core_members', JSON.stringify(list.map(fixProfileName)));
+      safeSetLocalStorage('sic_core_members', JSON.stringify(list.map(fixProfileName)));
     }
     return list;
   } catch (e) {
@@ -145,7 +145,7 @@ export function toggleCoreMemberStatus(id: string): UserProfile[] {
 export function deleteStoredCoreMember(id: string): UserProfile[] {
   try {
     const list = getStoredCoreMembers().filter((m) => m.id !== id);
-    localStorage.setItem('sic_core_members', JSON.stringify(list.map(fixProfileName)));
+    safeSetLocalStorage('sic_core_members', JSON.stringify(list.map(fixProfileName)));
     return list;
   } catch (e) {
     return getStoredCoreMembers();
@@ -385,6 +385,7 @@ export async function upsertCoreMemberToDatabase(payload: Record<string, any>): 
           domain: payload.domain || payload.designation || 'Club Administration',
           created_at: payload.created_at || new Date().toISOString()
         };
+        if (payload.avatar_url) minimalPayload.avatar_url = payload.avatar_url;
         if (payload.branch) minimalPayload.branch = payload.branch;
         if (payload.session) minimalPayload.session = payload.session;
         if (payload.registration_no) {
@@ -482,6 +483,7 @@ export async function upsertStudentProfileToDatabase(payload: Record<string, any
           status: payload.status || 'pending',
           created_at: payload.created_at || new Date().toISOString()
         };
+        if (payload.avatar_url) minimalPayload.avatar_url = payload.avatar_url;
 
         const retryRes = await supabase.from('student_profiles').upsert([minimalPayload]);
         if (!retryRes.error) {
@@ -674,17 +676,138 @@ export const INITIAL_MESSAGES: ChatMessage[] = [
   }
 ];
 
+export function safeSetLocalStorage(key: string, value: string): boolean {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (e: any) {
+    if (e?.name === 'QuotaExceededError' || e?.code === 22 || e?.number === -2147024882) {
+      console.warn(`[localStorage] Quota exceeded while setting key "${key}". Performing cache cleanup.`);
+      try {
+        // Clear non-critical caches to free up storage space
+        localStorage.removeItem('sic_announcements');
+      } catch (err) {}
+      try {
+        localStorage.setItem(key, value);
+        return true;
+      } catch (retryErr) {
+        console.warn(`[localStorage] Quota exceeded retry failed for "${key}". Value skipped.`);
+      }
+    }
+    return false;
+  }
+}
+
+/**
+ * Automatically resizes and compresses user profile images using HTML Canvas.
+ * Reduces 5MB+ images down to ~15-25KB, preventing QuotaExceededError in localStorage.
+ */
+export async function compressImage(
+  dataUrlOrFile: File | string,
+  maxWidth = 256,
+  maxHeight = 256,
+  quality = 0.75
+): Promise<string> {
+  return new Promise((resolve) => {
+    if (!dataUrlOrFile) {
+      resolve('');
+      return;
+    }
+
+    const img = new Image();
+
+    const processImage = () => {
+      try {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth || height > maxHeight) {
+          if (width > height) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(typeof dataUrlOrFile === 'string' ? dataUrlOrFile : img.src);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+        resolve(compressedBase64);
+      } catch (e) {
+        resolve(typeof dataUrlOrFile === 'string' ? dataUrlOrFile : img.src);
+      }
+    };
+
+    img.onload = processImage;
+    img.onerror = () => {
+      resolve(typeof dataUrlOrFile === 'string' ? dataUrlOrFile : '');
+    };
+
+    if (dataUrlOrFile instanceof File) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(dataUrlOrFile);
+    } else {
+      img.src = dataUrlOrFile;
+    }
+  });
+}
+
+export function saveUserAvatar(keyOrEmailOrId?: string, avatarUrl?: string) {
+  if (!keyOrEmailOrId || !avatarUrl) return;
+  const cleanKey = keyOrEmailOrId.trim().toLowerCase();
+  if (!cleanKey) return;
+  safeSetLocalStorage(`sic_avatar_${cleanKey}`, avatarUrl);
+}
+
+export function getUserAvatar(keyOrEmailOrId?: string): string | null {
+  if (!keyOrEmailOrId) return null;
+  const cleanKey = keyOrEmailOrId.trim().toLowerCase();
+  if (!cleanKey) return null;
+  try {
+    return localStorage.getItem(`sic_avatar_${cleanKey}`) || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 export function fixProfileName(user: UserProfile): UserProfile {
   if (!user) return user;
+  
+  let avatar = user.avatar_url || '';
+  if (!avatar) {
+    avatar = getUserAvatar(user.id) || getUserAvatar(user.email) || '';
+  } else {
+    saveUserAvatar(user.id, avatar);
+    saveUserAvatar(user.email, avatar);
+  }
+
   const cleanEmail = (user.email || '').toLowerCase().trim();
   if (cleanEmail === 'swapnil123@gmail.com') {
     return {
       ...user,
+      avatar_url: avatar,
       first_name: 'Swapnil',
       last_name: 'Pradhan',
     };
   }
-  return user;
+  return {
+    ...user,
+    avatar_url: avatar,
+  };
 }
 
 // Clean helper for user profile
@@ -723,9 +846,11 @@ export function getMockUser(): UserProfile | null {
 export function setMockUser(user: UserProfile | null) {
   if (user) {
     const fixed = fixProfileName(user);
-    localStorage.setItem('sic_mock_user', JSON.stringify(fixed));
+    safeSetLocalStorage('sic_mock_user', JSON.stringify(fixed));
   } else {
-    localStorage.removeItem('sic_mock_user');
+    try {
+      localStorage.removeItem('sic_mock_user');
+    } catch (e) {}
   }
 }
 

@@ -10,8 +10,10 @@ import {
   fetchLiveCoreMembers,
   fetchLiveStudentProfiles,
   fixProfileName,
+  saveUserAvatar,
   setMockUser,
   upsertStudentProfileToDatabase,
+  compressImage,
 } from '../lib/supabase';
 import {
   getStoredProjects,
@@ -59,7 +61,8 @@ import {
   Layers,
   MapPin,
   Check,
-  AlertCircle
+  AlertCircle,
+  Camera
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -166,29 +169,96 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
     };
   }, []);
 
+  // Active User State for Instant Real-Time UI Updates
+  const [activeUser, setActiveUser] = useState<UserProfile>(currentUser);
+
+  useEffect(() => {
+    if (currentUser) {
+      setActiveUser(currentUser);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    const handleProfileUpdate = (e: any) => {
+      if (e.detail) {
+        setActiveUser(e.detail);
+      }
+    };
+    window.addEventListener('sic_user_profile_updated', handleProfileUpdate);
+    return () => {
+      window.removeEventListener('sic_user_profile_updated', handleProfileUpdate);
+    };
+  }, []);
+
   // Profile Edit State
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
   const [profileForm, setProfileForm] = useState({
-    first_name: currentUser.first_name || '',
-    last_name: currentUser.last_name || '',
-    phone_no: currentUser.phone_no ? String(currentUser.phone_no) : '',
-    branch: currentUser.branch || 'Computer Science & Engineering',
-    domain: currentUser.domain || 'Tech / Coding',
-    past_project_repo: currentUser.past_project_repo || '',
+    first_name: activeUser.first_name || '',
+    last_name: activeUser.last_name || '',
+    phone_no: activeUser.phone_no ? String(activeUser.phone_no) : '',
+    branch: activeUser.branch || 'Computer Science & Engineering',
+    domain: activeUser.domain || 'Tech / Coding',
+    past_project_repo: activeUser.past_project_repo || '',
+    avatar_url: activeUser.avatar_url || '',
   });
+
+  useEffect(() => {
+    if (activeUser) {
+      setProfileForm({
+        first_name: activeUser.first_name || '',
+        last_name: activeUser.last_name || '',
+        phone_no: activeUser.phone_no ? String(activeUser.phone_no) : '',
+        branch: activeUser.branch || 'Computer Science & Engineering',
+        domain: activeUser.domain || 'Tech / Coding',
+        past_project_repo: activeUser.past_project_repo || '',
+        avatar_url: activeUser.avatar_url || '',
+      });
+    }
+  }, [activeUser, isEditingProfile]);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      alert('Please choose an image file smaller than 10MB.');
+      return;
+    }
+
+    try {
+      const compressedBase64 = await compressImage(file, 300, 300, 0.75);
+      if (compressedBase64) {
+        setProfileForm((prev) => ({
+          ...prev,
+          avatar_url: compressedBase64,
+        }));
+      }
+    } catch (err) {
+      console.warn('Student avatar compression error:', err);
+    }
+  };
 
   const handleProfileSave = async (e: React.FormEvent) => {
     e.preventDefault();
     const updatedUser: UserProfile = {
-      ...currentUser,
+      ...activeUser,
       first_name: String(profileForm.first_name || '').trim(),
       last_name: String(profileForm.last_name || '').trim(),
       phone_no: String(profileForm.phone_no || '').trim(),
       branch: profileForm.branch,
       domain: profileForm.domain,
       past_project_repo: String(profileForm.past_project_repo || '').trim(),
+      avatar_url: profileForm.avatar_url,
     };
 
+    if (updatedUser.avatar_url) {
+      saveUserAvatar(updatedUser.id, updatedUser.avatar_url);
+      if (updatedUser.email) saveUserAvatar(updatedUser.email, updatedUser.avatar_url);
+    }
+
+    setActiveUser(updatedUser);
     setMockUser(updatedUser);
 
     // Save to local registered users cache
@@ -212,6 +282,7 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
         session: updatedUser.session,
         registration_no: updatedUser.registration_no,
         domain: updatedUser.domain,
+        avatar_url: updatedUser.avatar_url,
         status: updatedUser.role === 'member' ? 'approved' : 'pending',
         created_at: updatedUser.created_at,
       });
@@ -444,11 +515,11 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
   const isApproved = activeRole === 'member' || activeRole === 'core_member' || activeRole === 'admin';
 
   // Display Names
-  const studentFirstName = currentUser.first_name?.trim() || currentUser.email?.split('@')[0] || 'Student';
-  const studentFullName = currentUser.last_name
-    ? `${studentFirstName} ${currentUser.last_name.trim()}`
+  const studentFirstName = activeUser.first_name?.trim() || activeUser.email?.split('@')[0] || 'Student';
+  const studentFullName = activeUser.last_name
+    ? `${studentFirstName} ${activeUser.last_name.trim()}`
     : studentFirstName;
-  const studentDomain = currentUser.domain || 'Tech / Coding';
+  const studentDomain = activeUser.domain || 'Tech / Coding';
 
   // Render Pending or Rejected Holding Screen if user is not approved
   if (activeRole === 'pending' || activeRole === 'rejected') {
@@ -718,9 +789,17 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
               className="flex items-center gap-2 truncate text-left cursor-pointer hover:opacity-80 transition-opacity"
               title="Edit Profile"
             >
-              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-md shrink-0">
-                {studentFirstName[0]}
-              </div>
+              {activeUser.avatar_url ? (
+                <img
+                  src={activeUser.avatar_url}
+                  alt={studentFirstName}
+                  className="w-8 h-8 rounded-full object-cover shadow-md shrink-0 border border-indigo-400/50"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-md shrink-0">
+                  {studentFirstName[0]}
+                </div>
+              )}
               <div className="truncate">
                 <p className="text-xs font-black text-slate-900 truncate">{studentFullName}</p>
                 <p className="text-[10px] text-indigo-600 font-semibold truncate">{studentDomain}</p>
@@ -787,8 +866,8 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
                     className="w-9 h-9 sm:w-12 sm:h-12 rounded-full bg-gradient-to-tr from-[#6366f1] via-[#8b5cf6] to-[#a855f7] text-white font-black text-xs sm:text-base flex items-center justify-center shadow-[0_6px_16px_rgba(99,102,241,0.4),inset_2px_2px_4px_rgba(255,255,255,0.6),inset_-2px_-2px_6px_rgba(0,0,0,0.3)] border-2 sm:border-4 border-[#f0f4f8] cursor-pointer hover:scale-105 active:scale-95 transition-all overflow-hidden shrink-0"
                     title="Profile & Account Menu"
                   >
-                    {currentUser.avatar_url ? (
-                      <img src={currentUser.avatar_url} alt={studentFirstName} className="w-full h-full object-cover" />
+                    {activeUser.avatar_url ? (
+                      <img src={activeUser.avatar_url} alt={studentFirstName} className="w-full h-full object-cover" />
                     ) : (
                       <span>{studentFirstName[0]}</span>
                     )}
@@ -1490,6 +1569,116 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
               </div>
 
               <form onSubmit={handleProfileSave} className="space-y-4">
+                {/* PROFILE PICTURE SELECTION SECTION */}
+                <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-3">
+                  <label className="block text-xs font-black uppercase text-slate-300">
+                    Profile Picture / Avatar
+                  </label>
+
+                  <div className="flex flex-col sm:flex-row items-center gap-4">
+                    {/* Preview Circle */}
+                    <div className="relative group shrink-0">
+                      <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 p-1 shadow-xl border-2 border-indigo-500/50 flex items-center justify-center overflow-hidden">
+                        {profileForm.avatar_url ? (
+                          <img
+                            src={profileForm.avatar_url}
+                            alt="Profile Preview"
+                            className="w-full h-full object-cover rounded-full"
+                          />
+                        ) : (
+                          <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center text-white font-black text-2xl">
+                            {studentFirstName[0]}
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="absolute inset-0 bg-slate-950/60 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white text-xs font-bold cursor-pointer"
+                        title="Change Photo"
+                      >
+                        <Camera className="w-6 h-6 text-white drop-shadow" />
+                      </button>
+                    </div>
+
+                    {/* Actions & Preset Selection */}
+                    <div className="flex-1 space-y-2 text-center sm:text-left min-w-0">
+                      <p className="text-xs text-slate-300 font-semibold">
+                        Select device photo or pick a 3D avatar:
+                      </p>
+
+                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                        {/* Upload Local File Button */}
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer active:scale-95"
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Upload Device Photo</span>
+                        </button>
+
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleFileUpload}
+                        />
+
+                        {profileForm.avatar_url && (
+                          <button
+                            type="button"
+                            onClick={() => setProfileForm({ ...profileForm, avatar_url: '' })}
+                            className="px-2.5 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 font-bold text-xs transition-all cursor-pointer active:scale-95"
+                          >
+                            Remove Photo
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Cool Preset Avatar Thumbnails */}
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                          Instant 3D Presets:
+                        </p>
+                        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                          {[
+                            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+                            'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+                            'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80',
+                            'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80',
+                            'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+                            'https://images.unsplash.com/photo-1628157582853-a796fa650a6a?w=150&auto=format&fit=crop&q=80',
+                          ].map((url, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => setProfileForm({ ...profileForm, avatar_url: url })}
+                              className={`w-8 h-8 rounded-full overflow-hidden border-2 shrink-0 transition-transform cursor-pointer hover:scale-110 ${
+                                profileForm.avatar_url === url ? 'border-purple-400 ring-2 ring-purple-500/50 scale-105' : 'border-slate-700 opacity-80 hover:opacity-100'
+                              }`}
+                            >
+                              <img src={url} alt={`Preset ${i + 1}`} className="w-full h-full object-cover" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Or Custom URL Input */}
+                  <div className="pt-1">
+                    <input
+                      type="url"
+                      value={profileForm.avatar_url}
+                      onChange={(e) => setProfileForm({ ...profileForm, avatar_url: e.target.value })}
+                      placeholder="Or paste image URL (e.g. https://...)"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white focus:outline-none focus:border-purple-500 font-mono"
+                    />
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-black uppercase text-slate-300 mb-1">First Name</label>

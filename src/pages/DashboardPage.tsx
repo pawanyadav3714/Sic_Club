@@ -305,13 +305,109 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
     }
   });
 
+
+  // Local role state so status changes instantly on approval
+  const [activeRole, setActiveRole] = useState<UserProfile['role']>(currentUser.role);
+  const [checkingStatus, setCheckingStatus] = useState(false);
+  const [statusFeedback, setStatusFeedback] = useState<string>('');
+
+  useEffect(() => {
+    setActiveRole(currentUser.role);
+  }, [currentUser?.role]);
+
+  // Live status check function
+  const handleCheckStatus = async () => {
+    setCheckingStatus(true);
+    setStatusFeedback('');
+
+    const approvedList: string[] = JSON.parse(localStorage.getItem('sic_approved_users') || '[]');
+    const isApprovedLocal = approvedList.includes(currentUser.id) || (currentUser.email && approvedList.includes(currentUser.email.toLowerCase()));
+
+    const rejectedList: string[] = JSON.parse(localStorage.getItem('sic_rejected_users') || '[]');
+    const isRejectedLocal = rejectedList.includes(currentUser.id) || (currentUser.email && rejectedList.includes(currentUser.email.toLowerCase()));
+
+    if (isApprovedLocal) {
+      currentUser.role = 'member';
+      setActiveRole('member');
+      setMockUser({ ...currentUser, role: 'member' });
+      setCheckingStatus(false);
+      confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+      return;
+    }
+
+    if (isRejectedLocal) {
+      currentUser.role = 'rejected';
+      setActiveRole('rejected');
+      setMockUser({ ...currentUser, role: 'rejected' });
+      setCheckingStatus(false);
+      return;
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: prof } = await supabase.from('student_profiles').select('status').eq('id', currentUser.id).maybeSingle();
+        if (prof?.status === 'approved') {
+          currentUser.role = 'member';
+          setActiveRole('member');
+          setMockUser({ ...currentUser, role: 'member' });
+          confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+          setCheckingStatus(false);
+          return;
+        } else if (prof?.status === 'rejected') {
+          currentUser.role = 'rejected';
+          setActiveRole('rejected');
+          setMockUser({ ...currentUser, role: 'rejected' });
+          setCheckingStatus(false);
+          return;
+        }
+
+        const { data: app } = await supabase.from('membership_applications').select('status').eq('user_id', currentUser.id).order('created_at', { ascending: false }).limit(1).maybeSingle();
+        if (app?.status === 'approved') {
+          currentUser.role = 'member';
+          setActiveRole('member');
+          setMockUser({ ...currentUser, role: 'member' });
+          confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+          setCheckingStatus(false);
+          return;
+        } else if (app?.status === 'rejected') {
+          currentUser.role = 'rejected';
+          setActiveRole('rejected');
+          setMockUser({ ...currentUser, role: 'rejected' });
+          setCheckingStatus(false);
+          return;
+        }
+      } catch (e) {}
+    }
+
+    setCheckingStatus(false);
+    setStatusFeedback('Your membership application is currently under review by a Core Member.');
+  };
+
   const loadLiveUsers = async () => {
+    // Check if current user is approved
+    const approvedList: string[] = JSON.parse(localStorage.getItem('sic_approved_users') || '[]');
+    if (approvedList.includes(currentUser.id) || (currentUser.email && approvedList.includes(currentUser.email.toLowerCase()))) {
+      currentUser.role = 'member';
+      setActiveRole('member');
+    }
+
     if (isSupabaseConfigured && supabase) {
       try {
         const liveCore = await fetchLiveCoreMembers();
         setStoredCoreMembers(liveCore);
         const liveStudents = await fetchLiveStudentProfiles();
         setRegisteredStudents(liveStudents);
+
+        const myProfile = liveStudents.find(s => s.id === currentUser.id || (s.email && currentUser.email && s.email.toLowerCase() === currentUser.email.toLowerCase()));
+        if (myProfile) {
+          if (myProfile.status === 'approved') {
+            currentUser.role = 'member';
+            setActiveRole('member');
+          } else if (myProfile.status === 'rejected') {
+            currentUser.role = 'rejected';
+            setActiveRole('rejected');
+          }
+        }
       } catch (e) {
         console.warn('DashboardPage loadLiveUsers error:', e);
       }
@@ -345,7 +441,7 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
   }, []);
 
   // Check Approval & Pending Logic
-  const isApproved = currentUser.role === 'member' || currentUser.role === 'core_member' || currentUser.role === 'admin';
+  const isApproved = activeRole === 'member' || activeRole === 'core_member' || activeRole === 'admin';
 
   // Display Names
   const studentFirstName = currentUser.first_name?.trim() || currentUser.email?.split('@')[0] || 'Student';
@@ -353,6 +449,151 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
     ? `${studentFirstName} ${currentUser.last_name.trim()}`
     : studentFirstName;
   const studentDomain = currentUser.domain || 'Tech / Coding';
+
+  // Render Pending or Rejected Holding Screen if user is not approved
+  if (activeRole === 'pending' || activeRole === 'rejected') {
+    const isPending = activeRole === 'pending';
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#0f172a] via-[#1e1b4b] to-[#0284c7] text-white font-['Plus_Jakarta_Sans',sans-serif] p-3 sm:p-8 flex flex-col items-center justify-center relative overflow-hidden">
+        {/* Soft Ambient Background Orbs */}
+        <div className="absolute -top-32 -left-32 w-96 h-96 bg-amber-500/20 rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-indigo-500/30 rounded-full blur-[140px] pointer-events-none" />
+
+        {/* Top Header / Branding Bar */}
+        <header className="w-full max-w-2xl flex items-center justify-between mb-4 sm:mb-6 z-20 px-1">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 p-0.5 shadow-lg">
+              <div className="w-full h-full bg-[#0f172a] rounded-[14px] flex items-center justify-center font-black text-xs tracking-wider text-white">
+                SIC
+              </div>
+            </div>
+            <div>
+              <h1 className="text-xs sm:text-sm font-black text-white uppercase tracking-wider">SCIENCE AND INNOVATION CLUB</h1>
+              <p className="text-[9px] sm:text-[10px] text-cyan-300 font-extrabold">STUDENT MEMBERSHIP PORTAL</p>
+            </div>
+          </div>
+
+          <button
+            onClick={onLogout}
+            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-rose-500/30 border border-white/20 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md active:scale-95"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Log Out</span>
+          </button>
+        </header>
+
+        {/* Central Claymorphic Status Card */}
+        <div className="w-full max-w-2xl p-5 sm:p-8 rounded-[28px] sm:rounded-[32px] bg-white/10 backdrop-blur-2xl border-2 border-white/20 shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-20 space-y-5 text-center relative overflow-hidden">
+          
+          {/* Status Badge */}
+          <div className="flex justify-center">
+            {isPending ? (
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full bg-amber-500/20 border-2 border-amber-400/60 text-amber-300 font-extrabold text-[11px] sm:text-xs uppercase tracking-wider shadow-lg animate-pulse">
+                <span className="text-sm sm:text-base">⏳</span>
+                <span>Application Pending Core Approval</span>
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full bg-rose-500/20 border-2 border-rose-400/60 text-rose-300 font-extrabold text-[11px] sm:text-xs uppercase tracking-wider shadow-lg">
+                <span className="text-sm sm:text-base">❌</span>
+                <span>Application Declined</span>
+              </div>
+            )}
+          </div>
+
+          {/* Heading */}
+          <div className="space-y-1.5">
+            <h2 className="text-lg sm:text-2xl md:text-3xl font-black text-white tracking-tight">
+              {isPending ? 'Membership Under Core Review' : 'Application Status Update'}
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-200/90 max-w-lg mx-auto font-medium leading-relaxed">
+              {isPending ? (
+                <>
+                  Hello <strong className="text-white">{studentFullName}</strong>! Your registration application to join the Science & Innovation Club is currently queued in the Core Member review roster.
+                </>
+              ) : (
+                <>
+                  Your membership application for <strong className="text-white">{studentFullName}</strong> was reviewed and declined by the Core Council.
+                </>
+              )}
+            </p>
+          </div>
+
+          {/* Applicant Info Box */}
+          <div className="p-3.5 sm:p-5 rounded-2xl bg-slate-900/60 border border-white/10 text-left space-y-2 text-xs text-slate-200">
+            <p className="text-[10px] uppercase font-black tracking-wider text-cyan-400 pb-1 border-b border-white/10">
+              Submitted Student Profile Details
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              <div>
+                <span className="text-slate-400 font-medium">Student Name: </span>
+                <span className="font-bold text-white">{studentFullName}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 font-medium">Email: </span>
+                <span className="font-bold text-cyan-200">{currentUser.email}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 font-medium">Registration No: </span>
+                <span className="font-mono font-bold text-amber-300">{currentUser.registration_no || 'Pending Assignment'}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 font-medium">Branch & Session: </span>
+                <span className="font-bold text-white">{currentUser.branch || 'CSE'} ({currentUser.session || '2025-2029'})</span>
+              </div>
+              <div>
+                <span className="text-slate-400 font-medium">Domain: </span>
+                <span className="font-bold text-purple-300">{currentUser.domain || 'Tech / Coding'}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 font-medium">Approval Status: </span>
+                <span className={`font-black ${isPending ? 'text-amber-400' : 'text-rose-400'}`}>
+                  {isPending ? '⏳ Waiting for Core Member' : '❌ Declined'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Explanation Banner */}
+          {isPending && (
+            <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-500/10 border border-amber-400/30 text-xs text-amber-200/90 text-left space-y-1">
+              <p className="font-bold text-amber-300 flex items-center gap-1.5">
+                <span>🛡️</span> Manual Core Member Acceptance Required
+              </p>
+              <p className="leading-relaxed">
+                An executive Core Member must manually review and accept your application in the Core Dashboard before full access to the Student Dashboard (Submit Project, Event Proposals, QR Pass, Chat Hub) is granted.
+              </p>
+            </div>
+          )}
+
+          {/* Feedback message */}
+          {statusFeedback && (
+            <div className="p-3 rounded-xl bg-indigo-500/20 border border-indigo-400/40 text-xs text-cyan-200 font-bold">
+              {statusFeedback}
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-1">
+            <button
+              onClick={handleCheckStatus}
+              disabled={checkingStatus}
+              className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-black text-xs shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 active:scale-95"
+            >
+              <RefreshCw className={`w-4 h-4 ${checkingStatus ? 'animate-spin' : ''}`} />
+              <span>{checkingStatus ? 'Checking Status...' : 'Check Approval Status'}</span>
+            </button>
+
+            <button
+              onClick={onLogout}
+              className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-white/10 hover:bg-rose-600/30 border border-white/20 text-white font-extrabold text-xs transition-all cursor-pointer active:scale-95"
+            >
+              Log Out
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`min-h-screen font-['Plus_Jakarta_Sans',sans-serif] selection:bg-emerald-500 selection:text-white relative overflow-x-hidden transition-colors duration-300 ${

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, Variants } from 'motion/react';
 import { ArrowLeft, ArrowRight, Check, Sparkles, HelpCircle, AlertCircle, Eye, EyeOff, X, User, ShieldCheck, CheckCircle2, Loader2 } from 'lucide-react';
 import { UserProfile, UserRole } from '../types';
-import { supabase, isSupabaseConfigured, setMockUser, MOCK_POSTS, saveCoreMember, getStoredCoreMembers, checkEmailInDatabase, purgeLocalEmailData, clearAllLocalDatabaseCache, upsertCoreMemberToDatabase, upsertStudentProfileToDatabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, setMockUser, MOCK_POSTS, saveCoreMember, getStoredCoreMembers, checkEmailInDatabase, purgeLocalEmailData, clearAllLocalDatabaseCache, upsertCoreMemberToDatabase, upsertStudentProfileToDatabase, getOAuthRedirectUrl } from '../lib/supabase';
 import confetti from 'canvas-confetti';
 
 interface StudentAuthPageProps {
@@ -807,7 +807,7 @@ export default function StudentAuthPage({ onNavigate, onLoginSuccess, initialMod
           const { data, error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
-              redirectTo: window.location.origin,
+              redirectTo: getOAuthRedirectUrl(),
               queryParams: { access_type: 'offline', prompt: 'select_account' },
             },
           });
@@ -850,7 +850,7 @@ export default function StudentAuthPage({ onNavigate, onLoginSuccess, initialMod
         const { data, error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
           options: {
-            redirectTo: window.location.origin,
+            redirectTo: getOAuthRedirectUrl(),
             queryParams: { access_type: 'offline', prompt: 'select_account' },
           },
         });

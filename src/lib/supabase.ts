@@ -21,6 +21,14 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
   ? createClient(storedUrl, storedKey)
   : null;
 
+export function getOAuthRedirectUrl(): string {
+  if (typeof window !== 'undefined') {
+    const origin = window.location.origin.replace(/\/$/, '');
+    return origin + '/';
+  }
+  return 'https://sic-club.vercel.app/';
+}
+
 // Default Mock Data with valid UUIDs for Supabase foreign keys
 export const MOCK_POSTS: ClubPost[] = [
   { id: '11111111-1111-4111-a111-111111111111', name: 'Tech / Coding', description: 'Build full-stack web apps, AI tools, competitive programming & open source projects.' },

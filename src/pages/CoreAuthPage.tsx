@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence, useScroll, useTransform } from 'motion/react';
 import { Shield, Lock, Mail, User, Eye, EyeOff, ArrowRight, Loader2, Key, Award, Phone, Building, Calendar, Hash, Compass, Power, Sparkles, CheckCircle2, Cpu, Check, Maximize2, Minimize2, Laptop, ShieldCheck, Zap, Radio, ChevronLeft, ChevronRight, RotateCw, Globe } from 'lucide-react';
 import { UserProfile } from '../types';
-import { setMockUser, supabase, isSupabaseConfigured, getStoredCoreMembers, saveCoreMember, DEFAULT_CORE_MEMBERS, checkEmailInDatabase, purgeLocalEmailData, upsertCoreMemberToDatabase } from '../lib/supabase';
+import { setMockUser, supabase, isSupabaseConfigured, getStoredCoreMembers, saveCoreMember, DEFAULT_CORE_MEMBERS, checkEmailInDatabase, purgeLocalEmailData, upsertCoreMemberToDatabase, getOAuthRedirectUrl } from '../lib/supabase';
 import confetti from 'canvas-confetti';
 import { Keyboard } from '../components/ui/keyboard';
 
@@ -360,7 +360,7 @@ export default function CoreAuthPage({ onNavigate, onLoginSuccess, initialMode =
         const { error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
           options: {
-            redirectTo: window.location.origin,
+            redirectTo: getOAuthRedirectUrl(),
             queryParams: {
               prompt: 'select_account',
             },

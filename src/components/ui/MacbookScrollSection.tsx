@@ -34,7 +34,8 @@ import {
   supabase, 
   isSupabaseConfigured,
   DEFAULT_CORE_MEMBERS,
-  checkEmailInDatabase
+  checkEmailInDatabase,
+  getOAuthRedirectUrl
 } from '../../lib/supabase';
 import confetti from 'canvas-confetti';
 import { Keyboard } from './keyboard';
@@ -463,7 +464,7 @@ export default function MacbookScrollSection({ onNavigate, onLoginSuccess }: Mac
         const { error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
           options: {
-            redirectTo: window.location.origin,
+            redirectTo: getOAuthRedirectUrl(),
             queryParams: {
               prompt: 'select_account',
             },

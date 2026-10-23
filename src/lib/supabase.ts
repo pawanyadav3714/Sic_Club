@@ -22,9 +22,8 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
   : null;
 
 export function getOAuthRedirectUrl(): string {
-  if (typeof window !== 'undefined') {
-    const origin = window.location.origin.replace(/\/$/, '');
-    return origin + '/';
+  if (import.meta.env.VITE_SITE_URL) {
+    return import.meta.env.VITE_SITE_URL.replace(/\/$/, '') + '/';
   }
   return 'https://sic-club.vercel.app/';
 }

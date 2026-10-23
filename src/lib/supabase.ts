@@ -96,7 +96,7 @@ export async function fetchLiveStudentProfiles(): Promise<UserProfile[]> {
       if (!error && data) {
         const liveStudents: UserProfile[] = data.map(s => fixProfileName({
           ...s,
-          role: s.status === 'rejected' ? ('rejected' as const) : ('member' as const)
+          role: s.status === 'approved' ? ('member' as const) : s.status === 'rejected' ? ('rejected' as const) : ('pending' as const)
         }));
         localStorage.setItem('sic_registered_users', JSON.stringify(liveStudents));
         return liveStudents;
@@ -694,12 +694,16 @@ export function getMockUser(): UserProfile | null {
         user.registration_no = 'REG' + Math.floor(1000000 + Math.random() * 9000000);
       }
       const approvedList: string[] = JSON.parse(localStorage.getItem('sic_approved_users') || '[]');
-      const registeredList: UserProfile[] = JSON.parse(localStorage.getItem('sic_registered_users') || '[]');
-      const isEnrolled = registeredList.some(u => u.id === user.id || (u.email && user.email && u.email.toLowerCase() === user.email.toLowerCase()));
-      const isApproved = approvedList.includes(user.id) || (user.email && approvedList.includes(user.email.toLowerCase())) || isEnrolled;
+      const rejectedList: string[] = JSON.parse(localStorage.getItem('sic_rejected_users') || '[]');
+      const isApproved = approvedList.includes(user.id) || (user.email && approvedList.includes(user.email.toLowerCase()));
+      const isRejected = rejectedList.includes(user.id) || (user.email && rejectedList.includes(user.email.toLowerCase()));
       
-      if (isApproved || user.role === 'member') {
+      if (isApproved) {
         user.role = 'member';
+      } else if (isRejected) {
+        user.role = 'rejected';
+      } else {
+        user.role = 'pending';
       }
     }
     return user;

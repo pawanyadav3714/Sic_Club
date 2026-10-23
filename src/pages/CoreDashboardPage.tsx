@@ -374,14 +374,13 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
       if (checkIsCore(prof, prof.id)) return;
 
       const isApproved =
-        prof.role === 'member' ||
         prof.status === 'approved' ||
         approvedList.includes(prof.id) ||
         (prof.email && approvedList.includes(prof.email.toLowerCase()));
 
       const isRejected =
-        prof.role === 'rejected' ||
         prof.status === 'rejected' ||
+        prof.role === 'rejected' ||
         rejectedList.includes(prof.id) ||
         (prof.email && rejectedList.includes(prof.email.toLowerCase()));
 
@@ -461,10 +460,24 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
     const updatedRejected = rejectedList.filter((id) => id !== userId && id !== userEmail);
     localStorage.setItem('sic_rejected_users', JSON.stringify(updatedRejected));
 
-    // 3. Update local applications cache
+    // 3. Update local applications cache & registered users
     const storedApps: MembershipApplication[] = JSON.parse(localStorage.getItem('sic_membership_applications') || '[]');
-    const updatedApps = storedApps.map((a) => (a.user_id === userId ? { ...a, status: 'approved' as const } : a));
+    const updatedApps = storedApps.map((a) => (a.user_id === userId || (a.user?.email && userEmail && a.user.email.toLowerCase() === userEmail) ? { ...a, status: 'approved' as const } : a));
     localStorage.setItem('sic_membership_applications', JSON.stringify(updatedApps));
+
+    try {
+      const registeredUsers: UserProfile[] = JSON.parse(localStorage.getItem('sic_registered_users') || '[]');
+      const regIdx = registeredUsers.findIndex(u => u.id === userId || (u.email && userEmail && u.email.toLowerCase() === userEmail));
+      if (regIdx >= 0) {
+        registeredUsers[regIdx] = { ...registeredUsers[regIdx], status: 'approved', role: 'member' };
+        localStorage.setItem('sic_registered_users', JSON.stringify(registeredUsers));
+      }
+    } catch (e) {}
+
+    const mock = getMockUser();
+    if (mock && (mock.id === userId || (mock.email && userEmail && mock.email.toLowerCase() === userEmail))) {
+      setMockUser({ ...mock, role: 'member' });
+    }
 
     // 4. Update Supabase if available
     if (isSupabaseConfigured && supabase) {
@@ -497,10 +510,24 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
     const updatedApproved = approvedList.filter((id) => id !== userId && id !== userEmail);
     localStorage.setItem('sic_approved_users', JSON.stringify(updatedApproved));
 
-    // 3. Update local applications cache
+    // 3. Update local applications cache & registered users
     const storedApps: MembershipApplication[] = JSON.parse(localStorage.getItem('sic_membership_applications') || '[]');
-    const updatedApps = storedApps.map((a) => (a.user_id === userId ? { ...a, status: 'rejected' as const } : a));
+    const updatedApps = storedApps.map((a) => (a.user_id === userId || (a.user?.email && userEmail && a.user.email.toLowerCase() === userEmail) ? { ...a, status: 'rejected' as const } : a));
     localStorage.setItem('sic_membership_applications', JSON.stringify(updatedApps));
+
+    try {
+      const registeredUsers: UserProfile[] = JSON.parse(localStorage.getItem('sic_registered_users') || '[]');
+      const regIdx = registeredUsers.findIndex(u => u.id === userId || (u.email && userEmail && u.email.toLowerCase() === userEmail));
+      if (regIdx >= 0) {
+        registeredUsers[regIdx] = { ...registeredUsers[regIdx], status: 'rejected', role: 'rejected' };
+        localStorage.setItem('sic_registered_users', JSON.stringify(registeredUsers));
+      }
+    } catch (e) {}
+
+    const mock = getMockUser();
+    if (mock && (mock.id === userId || (mock.email && userEmail && mock.email.toLowerCase() === userEmail))) {
+      setMockUser({ ...mock, role: 'rejected' });
+    }
 
     // 4. Update Supabase if available
     if (isSupabaseConfigured && supabase) {

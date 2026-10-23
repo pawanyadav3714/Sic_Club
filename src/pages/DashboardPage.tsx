@@ -604,6 +604,49 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
           {activeTab === 'portal' && (
             <div className="space-y-6">
               
+              {/* PENDING / REJECTED STATUS BANNER */}
+              {currentUser.role === 'pending' && (
+                <div className="p-4 sm:p-5 rounded-[24px] bg-gradient-to-r from-amber-500/20 via-orange-500/15 to-amber-600/20 border-2 border-amber-400/50 shadow-lg text-amber-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black text-lg shrink-0 shadow-md animate-pulse">
+                      ⏳
+                    </div>
+                    <div>
+                      <h3 className="text-sm sm:text-base font-extrabold text-amber-950">
+                        Membership Application Pending Core Member Approval
+                      </h3>
+                      <p className="text-xs font-semibold text-amber-900/90 leading-relaxed">
+                        Welcome! Your registration to join SIC Club is submitted and awaiting manual approval by an executive Core Member.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="px-3.5 py-1.5 rounded-full bg-amber-500 text-white font-black text-[11px] uppercase tracking-wider shadow-sm shrink-0 whitespace-nowrap">
+                    Pending Core Approval
+                  </span>
+                </div>
+              )}
+
+              {currentUser.role === 'rejected' && (
+                <div className="p-4 sm:p-5 rounded-[24px] bg-gradient-to-r from-rose-500/20 via-red-500/15 to-rose-600/20 border-2 border-rose-400/50 shadow-lg text-rose-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-black text-lg shrink-0 shadow-md">
+                      ❌
+                    </div>
+                    <div>
+                      <h3 className="text-sm sm:text-base font-extrabold text-rose-950">
+                        Membership Application Declined
+                      </h3>
+                      <p className="text-xs font-semibold text-rose-900/90 leading-relaxed">
+                        Your application was reviewed and declined by the Core Committee. Contact club administration for details.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="px-3.5 py-1.5 rounded-full bg-rose-600 text-white font-black text-[11px] uppercase tracking-wider shadow-sm shrink-0 whitespace-nowrap">
+                    Application Declined
+                  </span>
+                </div>
+              )}
+
               {/* QUICK UTILITIES GRID (5 Squishy 3D Square Buttons) */}
               <div>
                 <p className="text-xs font-black uppercase tracking-wider text-slate-400 mb-3 px-1">

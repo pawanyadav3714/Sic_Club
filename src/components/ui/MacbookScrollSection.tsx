@@ -509,7 +509,7 @@ export default function MacbookScrollSection({ onNavigate, onLoginSuccess }: Mac
   };
 
   return (
-    <div ref={containerRef} className="py-16 relative overflow-hidden flex flex-col items-center justify-center perspective-[1400px] bg-gradient-to-b from-[#030712] via-[#070b19] to-[#030712]">
+    <div ref={containerRef} className="py-6 sm:py-16 relative overflow-hidden flex flex-col items-center justify-center perspective-[1400px] bg-gradient-to-b from-[#030712] via-[#070b19] to-[#030712]">
 
       {/* 3D Scroll-Driven Zoom MacBook Mockup */}
       <motion.div
@@ -652,8 +652,7 @@ export default function MacbookScrollSection({ onNavigate, onLoginSuccess }: Mac
                     {/* Realistic macOS Bash Terminal Window (Matching User's Video) */}
                     <div 
                       onClick={() => terminalInputRef.current?.focus()}
-                      className="w-full max-w-2xl bg-[#111216]/95 rounded-xl border border-slate-800 shadow-2xl overflow-hidden flex flex-col text-left font-mono my-auto backdrop-blur-xl transition-all"
-                      style={{ minHeight: '380px' }}
+                      className="w-full max-w-2xl bg-[#111216]/95 rounded-xl border border-slate-800 shadow-2xl overflow-hidden flex flex-col text-left font-mono my-auto backdrop-blur-xl transition-all min-h-[190px] sm:min-h-[380px]"
                     >
                       {/* Window Title Bar */}
                       <div className="bg-[#1a1c23] px-3.5 py-2.5 flex items-center justify-between border-b border-slate-800/80 select-none">
@@ -672,7 +671,7 @@ export default function MacbookScrollSection({ onNavigate, onLoginSuccess }: Mac
                       </div>
 
                       {/* Terminal Screen Body */}
-                      <div className="p-4 sm:p-6 flex-1 flex flex-col justify-start overflow-y-auto space-y-2.5 font-mono text-sm sm:text-[15px] text-slate-100 antialiased tracking-normal select-text [text-rendering:optimizeLegibility]">
+                      <div className="p-2.5 sm:p-6 flex-1 flex flex-col justify-start overflow-y-auto space-y-1.5 sm:space-y-2.5 font-mono text-xs sm:text-[15px] text-slate-100 antialiased tracking-normal select-text [text-rendering:optimizeLegibility]">
                         <div className="space-y-2 font-mono">
                           {terminalHistory.map((line, idx) => (
                             <div key={idx} className="leading-relaxed">
@@ -1387,13 +1386,13 @@ export default function MacbookScrollSection({ onNavigate, onLoginSuccess }: Mac
         {/* MacBook Keyboard & Mouse Trackpad Base */}
         <div className="w-full relative mt-0 z-20 flex flex-col items-center overflow-hidden">
           <div 
-            className="w-full max-w-4xl px-1 sm:px-2 origin-top transition-transform duration-500 overflow-x-auto scrollbar-hide py-1 flex justify-center"
+            className="w-full max-w-4xl px-1 sm:px-2 origin-top transition-transform duration-500 overflow-hidden py-0.5 flex justify-center h-[140px] sm:h-auto"
             style={{
               transform: isMobile ? 'none' : 'perspective(1200px) rotateX(15deg)',
               transformOrigin: 'top center',
             }}
           >
-            <div className={isMobile ? 'min-w-[620px] transform scale-[0.75] origin-top my-0' : 'w-full'}>
+            <div className={isMobile ? 'min-w-[480px] transform scale-[0.48] origin-top my-0' : 'w-full'}>
               <Keyboard enableSound={true} onKeyPress={handleOnScreenKeyPress} />
             </div>
           </div>

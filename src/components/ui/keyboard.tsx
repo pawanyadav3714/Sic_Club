@@ -195,7 +195,7 @@ export function Keyboard({ enableSound = true, onKeyPress }: KeyboardProps) {
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 py-3.5 sm:py-4 rounded-[24px] bg-[#e2e8f0] border-2 border-slate-300 shadow-[0_20px_50px_rgba(0,0,0,0.6)] backdrop-blur-xl relative overflow-visible select-none">
+    <div className="w-full max-w-4xl mx-auto px-2 sm:px-6 py-2 sm:py-4 rounded-[18px] sm:rounded-[24px] bg-[#e2e8f0] border-2 border-slate-300 shadow-[0_20px_50px_rgba(0,0,0,0.6)] backdrop-blur-xl relative overflow-visible select-none">
       {/* Aluminum sheen */}
       <div className="absolute inset-0 bg-gradient-to-tr from-white/60 via-transparent to-black/5 pointer-events-none rounded-[22px]" />
 
@@ -251,9 +251,9 @@ export function Keyboard({ enableSound = true, onKeyPress }: KeyboardProps) {
       </div>
 
       {/* Keyboard Grid */}
-      <div className="space-y-1 sm:space-y-1.5 relative z-10">
+      <div className="space-y-0.5 sm:space-y-1.5 relative z-10">
         {KEYBOARD_ROWS.map((row, rIdx) => (
-          <div key={rIdx} className="flex justify-center gap-1 sm:gap-1.5">
+          <div key={rIdx} className="flex justify-center gap-0.5 sm:gap-1.5">
             {row.map((item, iIdx) => {
               const keyId = `${item.label}-${rIdx}-${iIdx}`;
               const isSpace = item.label === 'space';
@@ -265,17 +265,17 @@ export function Keyboard({ enableSound = true, onKeyPress }: KeyboardProps) {
                   key={keyId}
                   whileTap={{ scale: 0.92, y: 1 }}
                   onClick={() => handleKeyClick(keyId, item.label, item.sub, rIdx, iIdx)}
-                  className={`h-7 sm:h-8 rounded-lg bg-white hover:bg-slate-50 text-slate-900 text-xs font-sans font-semibold flex flex-col items-center justify-center shadow-[0_2px_4px_-1px_rgba(0,0,0,0.1),0_1px_2px_-1px_rgba(0,0,0,0.06),0_1px_0_rgba(255,255,255,0.8)_inset] border border-slate-300 transition-all cursor-pointer ${
-                    isSpace ? 'w-52 sm:w-72' : isWide ? 'px-2 sm:px-3 flex-1' : 'w-8 sm:w-10'
+                  className={`h-6 sm:h-8 rounded-md sm:rounded-lg bg-white hover:bg-slate-50 text-slate-900 text-xs font-sans font-semibold flex flex-col items-center justify-center shadow-[0_2px_4px_-1px_rgba(0,0,0,0.1),0_1px_2px_-1px_rgba(0,0,0,0.06),0_1px_0_rgba(255,255,255,0.8)_inset] border border-slate-300 transition-all cursor-pointer ${
+                    isSpace ? 'w-44 sm:w-72' : isWide ? 'px-1.5 sm:px-3 flex-1' : 'w-7 sm:w-10'
                   } ${isActive ? 'bg-slate-200 shadow-inner translate-y-0.5' : ''}`}
                 >
                   {item.sub ? (
                     <div className="flex flex-col items-center justify-center leading-none">
-                      <span className="text-[8px] text-slate-500 font-medium leading-none">{item.sub}</span>
-                      <span className="text-[9px] sm:text-[10px] font-bold text-slate-900 leading-tight">{item.label.toUpperCase()}</span>
+                      <span className="text-[7px] sm:text-[8px] text-slate-500 font-medium leading-none">{item.sub}</span>
+                      <span className="text-[8px] sm:text-[10px] font-bold text-slate-900 leading-tight">{item.label.toUpperCase()}</span>
                     </div>
                   ) : (
-                    <span className="text-[9px] sm:text-[10px] font-bold text-slate-900 tracking-tight leading-none">
+                    <span className="text-[8px] sm:text-[10px] font-bold text-slate-900 tracking-tight leading-none">
                       {isSpace ? '' : item.label.toUpperCase()}
                     </span>
                   )}
@@ -287,9 +287,9 @@ export function Keyboard({ enableSound = true, onKeyPress }: KeyboardProps) {
       </div>
 
       {/* Trackpad */}
-      <div className="mt-2.5 pt-2 border-t border-slate-300/80 flex justify-center">
-        <div className="w-48 sm:w-64 h-7 sm:h-8 rounded-xl bg-white border border-slate-300 shadow-[0_1px_3px_rgba(0,0,0,0.05)_inset] flex items-center justify-center">
-          <span className="text-[9px] font-mono text-slate-400 tracking-widest font-bold">TRACKPAD</span>
+      <div className="mt-1 sm:mt-2.5 pt-1 sm:pt-2 border-t border-slate-300/80 flex justify-center">
+        <div className="w-36 sm:w-64 h-5 sm:h-8 rounded-lg sm:rounded-xl bg-white border border-slate-300 shadow-[0_1px_3px_rgba(0,0,0,0.05)_inset] flex items-center justify-center">
+          <span className="text-[8px] sm:text-[9px] font-mono text-slate-400 tracking-widest font-bold">TRACKPAD</span>
         </div>
       </div>
     </div>

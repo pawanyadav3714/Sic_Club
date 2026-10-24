@@ -5,8 +5,8 @@ import {
   Flame
 } from 'lucide-react';
 import { Announcement, EventProposal } from '../types';
-import { getStoredAnnouncements } from '../lib/supabase';
-import { getAllAnnouncedEvents } from '../lib/eventStorage';
+import { getStoredAnnouncements, fetchLiveAnnouncements } from '../lib/supabase';
+import { getAllAnnouncedEvents, fetchLiveEvents } from '../lib/eventStorage';
 
 interface DynamicLobbyNoticeTickerProps {
   onSelectEvent?: (eventId: string) => void;
@@ -19,6 +19,15 @@ export default function DynamicLobbyNoticeTicker({ onSelectEvent }: DynamicLobby
 
   // Sync with real-time events and announcements across all tabs
   useEffect(() => {
+    const loadLive = async () => {
+        // Fetch from Supabase directly to populate localStorage
+        await fetchLiveAnnouncements();
+        await fetchLiveEvents();
+        setAnnouncements(getStoredAnnouncements());
+        setEvents(getAllAnnouncedEvents());
+    };
+    loadLive();
+
     const handleUpdate = () => {
       setAnnouncements(getStoredAnnouncements());
       setEvents(getAllAnnouncedEvents());

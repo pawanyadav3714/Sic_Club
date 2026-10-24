@@ -260,7 +260,10 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
     }
 
     setActiveUser(updatedUser);
-    setMockUser(updatedUser);
+    
+    // Save to local storage without avatar_url to prevent QuotaExceededError
+    const userWithoutAvatar = { ...updatedUser, avatar_url: '' };
+    setMockUser(userWithoutAvatar);
 
     // Save to local registered users cache
     try {
@@ -361,7 +364,7 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
 
   // Registrations Pass Modal State
   const [showRegistrationsModal, setShowRegistrationsModal] = useState(false);
-  const [registeredEvents, setRegisteredEvents] = useState<number[]>([1, 2]);
+
 
   // Notifications Modal
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
@@ -1092,36 +1095,45 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
                   };
                 });
 
-                const displayList = registeredEventList.length > 0 ? registeredEventList : [
-                  { id: 'def-1', title: 'Upcoming Club Workshop', time: 'Apr 2026 | 12:30 pm', loc: 'Main Seminar Hall', status: 'CONFIRMED PASS ✓', summary: 'Introduction to Robotics & Microcontrollers.' },
-                  { id: 'def-2', title: 'AI & Machine Learning Bootcamp', time: '21 May 2026 | 1:30 pm', loc: 'Computer Lab 3', status: 'CONFIRMED PASS ✓', summary: 'Deep learning & neural networks fundamentals.' }
-                ];
-
                 return (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {displayList.map((pass) => (
-                      <div
-                        key={pass.id}
-                        className="p-5 rounded-[28px] bg-gradient-to-br from-white via-slate-50 to-sky-50/40 border-2 border-white shadow-[8px_12px_20px_rgba(150,165,205,0.35),-6px_-6px_14px_rgba(255,255,255,0.95),inset_2px_2px_4px_rgba(255,255,255,0.8)] space-y-3 flex flex-col justify-between"
-                      >
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-sm">
-                              {pass.status}
-                            </span>
-                            <span className="text-xs font-bold text-slate-600">📍 {pass.loc}</span>
-                          </div>
-
-                          <h3 className="text-base font-black text-slate-900 leading-snug">{pass.title}</h3>
-                          <p className="text-xs text-slate-600 font-medium leading-relaxed">{pass.summary}</p>
+                  <div className="space-y-4">
+                    {registeredEventList.length === 0 ? (
+                      <div className="p-8 sm:p-12 rounded-[32px] bg-white/50 border border-dashed border-slate-300 text-center space-y-3">
+                        <div className="w-14 h-14 rounded-3xl bg-sky-50 text-sky-600 mx-auto flex items-center justify-center font-black text-2xl">
+                          🎟️
                         </div>
-
-                        <div className="pt-2.5 border-t border-slate-200/80 flex items-center justify-between text-[11px] font-bold text-slate-500">
-                          <span>📅 {pass.time}</span>
-                          <span className="text-sky-600 font-extrabold">Verified Pass</span>
-                        </div>
+                        <h3 className="text-base sm:text-lg font-black text-slate-900">No Registered Passes</h3>
+                        <p className="text-xs sm:text-sm text-slate-500 font-medium max-w-sm mx-auto">
+                          Once you register for an event from the 'Event' tab, your verified digital pass will appear here.
+                        </p>
                       </div>
-                    ))}
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {registeredEventList.map((pass) => (
+                          <div
+                            key={pass.id}
+                            className="p-5 rounded-[28px] bg-gradient-to-br from-white via-slate-50 to-sky-50/40 border-2 border-white shadow-[8px_12px_20px_rgba(150,165,205,0.35),-6px_-6px_14px_rgba(255,255,255,0.95),inset_2px_2px_4px_rgba(255,255,255,0.8)] space-y-3 flex flex-col justify-between"
+                          >
+                            <div className="space-y-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-sm">
+                                  {pass.status}
+                                </span>
+                                <span className="text-xs font-bold text-slate-600">📍 {pass.loc}</span>
+                              </div>
+
+                              <h3 className="text-base font-black text-slate-900 leading-snug">{pass.title}</h3>
+                              <p className="text-xs text-slate-600 font-medium leading-relaxed">{pass.summary}</p>
+                            </div>
+
+                            <div className="pt-2.5 border-t border-slate-200/80 flex items-center justify-between text-[11px] font-bold text-slate-500">
+                              <span>📅 {pass.time}</span>
+                              <span className="text-sky-600 font-extrabold">Verified Pass</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })()}
@@ -1523,21 +1535,45 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
               </div>
 
               <div className="space-y-3">
-                {[
-                  { id: 1, title: 'Upcoming Club Workshop', time: 'Apr 2024 | 12:30 pm', loc: 'Main Seminar Hall' },
-                  { id: 2, title: 'AI & Machine Learning Bootcamp', time: '21 May 23 | 1:30 pm', loc: 'Computer Lab 3' },
-                ].map((ev) => (
-                  <div key={ev.id} className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase text-emerald-400 bg-emerald-950 px-2.5 py-0.5 rounded-full border border-emerald-800">
-                        CONFIRMED PASS ✓
-                      </span>
-                      <span className="text-xs text-slate-400 font-bold">📍 {ev.loc}</span>
+                {(() => {
+                  const userRegs = getEventRegistrations().filter(
+                    r => r.email.toLowerCase() === currentUser.email.toLowerCase() || r.user_id === currentUser.id
+                  );
+                  const allEvents = getAllAnnouncedEvents();
+
+                  const registeredEventList = userRegs.map(reg => {
+                    const ev = allEvents.find(e => e.id === reg.event_id);
+                    return {
+                      id: reg.id,
+                      title: ev ? ev.title : 'Club Workshop Pass',
+                      time: ev ? `${new Date(ev.event_starts_at).toLocaleDateString()} | ${new Date(ev.event_starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Upcoming Schedule',
+                      loc: ev ? ev.venue : 'Main Seminar Hall',
+                      status: reg.status === 'confirmed' ? 'CONFIRMED PASS ✓' : `WAITLIST #${reg.waitlist_position || 1}`
+                    };
+                  });
+
+                  if (registeredEventList.length === 0) {
+                    return (
+                      <div className="py-8 text-center space-y-2">
+                        <Ticket className="w-10 h-10 text-slate-700 mx-auto opacity-20" />
+                        <p className="text-xs text-slate-400 font-bold">No Active Event Passes</p>
+                      </div>
+                    );
+                  }
+
+                  return registeredEventList.map((ev) => (
+                    <div key={ev.id} className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase text-emerald-400 bg-emerald-950 px-2.5 py-0.5 rounded-full border border-emerald-800">
+                          {ev.status}
+                        </span>
+                        <span className="text-xs text-slate-400 font-bold">📍 {ev.loc}</span>
+                      </div>
+                      <h4 className="text-sm font-black text-white">{ev.title}</h4>
+                      <p className="text-xs text-slate-400">📅 {ev.time}</p>
                     </div>
-                    <h4 className="text-sm font-black text-white">{ev.title}</h4>
-                    <p className="text-xs text-slate-400">📅 {ev.time}</p>
-                  </div>
-                ))}
+                  ));
+                })()}
               </div>
             </motion.div>
           </div>

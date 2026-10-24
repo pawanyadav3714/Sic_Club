@@ -786,14 +786,17 @@ export function getUserAvatar(keyOrEmailOrId?: string): string | null {
 export function fixProfileName(user: UserProfile): UserProfile {
   if (!user) return user;
   
-  let avatar = user.avatar_url || '';
-  if (!avatar) {
-    avatar = getUserAvatar(user.id) || getUserAvatar(user.email) || '';
-  } else {
-    saveUserAvatar(user.id, avatar);
-    saveUserAvatar(user.email, avatar);
+  // If DB has an avatar_url, prioritize it.
+  if (user.avatar_url) {
+    // Also save to localStorage to maintain local availability
+    saveUserAvatar(user.id, user.avatar_url);
+    saveUserAvatar(user.email, user.avatar_url);
+    return user;
   }
 
+  // Fallback to localStorage
+  const avatar = getUserAvatar(user.id) || getUserAvatar(user.email) || '';
+  
   const cleanEmail = (user.email || '').toLowerCase().trim();
   if (cleanEmail === 'swapnil123@gmail.com') {
     return {
@@ -803,6 +806,7 @@ export function fixProfileName(user: UserProfile): UserProfile {
       last_name: 'Pradhan',
     };
   }
+
   return {
     ...user,
     avatar_url: avatar,

@@ -142,7 +142,7 @@ export function saveEventProposal(event: EventProposal): EventProposal[] {
     if (isSupabaseConfigured && supabase) {
       (async () => {
         try {
-          await supabase.from('events').upsert([{
+          await supabase.from('event_announcements').upsert([{
             id: event.id,
             title: event.title,
             summary: event.summary,
@@ -166,7 +166,9 @@ export function saveEventProposal(event: EventProposal): EventProposal[] {
             created_at: event.created_at || new Date().toISOString(),
             updated_at: new Date().toISOString()
           }]);
-        } catch (e) {}
+        } catch (e) {
+          console.error('Error saving event to event_announcements:', e);
+        }
       })();
     }
 
@@ -188,7 +190,7 @@ export async function fetchLiveEvents(): Promise<EventProposal[]> {
 
   try {
     const { data, error } = await supabase
-      .from('events')
+      .from('event_announcements')
       .select('*')
       .order('created_at', { ascending: false });
 
@@ -333,7 +335,7 @@ export function deleteEventProposal(id: string): EventProposal[] {
     if (isSupabaseConfigured && supabase) {
       (async () => {
         try {
-          await supabase.from('events').delete().eq('id', id);
+          await supabase.from('event_announcements').delete().eq('id', id);
         } catch (e) {}
         try {
           await supabase.from('announcements').delete().or(`id.eq.${id},id.eq.ann-${id}`);

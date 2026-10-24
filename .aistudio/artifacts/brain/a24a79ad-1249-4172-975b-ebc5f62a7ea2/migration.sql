@@ -1,29 +1,46 @@
--- Create Direct Messages Table
-CREATE TABLE IF NOT EXISTS public.direct_messages (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    sender_id TEXT NOT NULL,
-    sender_name TEXT NOT NULL,
-    sender_role TEXT NOT NULL,
-    sender_avatar TEXT,
-    recipient_id TEXT NOT NULL,
-    recipient_name TEXT NOT NULL,
-    content TEXT NOT NULL,
-    media_url TEXT,
-    media_name TEXT,
-    media_type TEXT,
-    link_url TEXT,
-    link_title TEXT,
+-- ========================================================
+-- PERMANENT SCHEMA FIX: Unified Event Announcements Table
+-- ========================================================
+
+-- 1. Create the correct table if it doesn't exist with ALL necessary columns
+CREATE TABLE IF NOT EXISTS public.event_announcements (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    summary TEXT,
+    description TEXT NOT NULL,
+    category TEXT,
+    venue TEXT,
+    cover_image_path TEXT,
+    event_starts_at TEXT,
+    event_ends_at TEXT,
+    registration_opens_at TEXT,
+    registration_closes_at TEXT,
+    capacity INTEGER DEFAULT 60,
+    registered_count INTEGER DEFAULT 0,
+    waitlist_count INTEGER DEFAULT 0,
+    visibility TEXT DEFAULT 'public',
+    assigned_team TEXT,
+    status TEXT DEFAULT 'published',
+    submitted_by_id TEXT,
+    submitted_by_name TEXT,
+    submitted_by_role TEXT,
+    author_name TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    status TEXT DEFAULT 'sent'
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
-ALTER TABLE public.direct_messages ENABLE ROW LEVEL SECURITY;
+-- 2. Ensure RLS is enabled
+ALTER TABLE public.event_announcements ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "Users can view own direct messages" ON public.direct_messages;
-CREATE POLICY "Users can view own direct messages" ON public.direct_messages FOR SELECT USING (true);
+-- 3. Set policies
+DROP POLICY IF EXISTS "Anyone can view event announcements" ON public.event_announcements;
+CREATE POLICY "Anyone can view event announcements" ON public.event_announcements FOR SELECT USING (true);
 
-DROP POLICY IF EXISTS "Users can insert own direct messages" ON public.direct_messages;
-CREATE POLICY "Users can insert own direct messages" ON public.direct_messages FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Anyone can insert event announcements" ON public.event_announcements;
+CREATE POLICY "Anyone can insert event announcements" ON public.event_announcements FOR INSERT WITH CHECK (true);
 
-DROP POLICY IF EXISTS "Users can update own direct messages" ON public.direct_messages;
-CREATE POLICY "Users can update own direct messages" ON public.direct_messages FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Anyone can update event announcements" ON public.event_announcements;
+CREATE POLICY "Anyone can update event announcements" ON public.event_announcements FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "Anyone can delete event announcements" ON public.event_announcements;
+CREATE POLICY "Anyone can delete event announcements" ON public.event_announcements FOR DELETE USING (true);

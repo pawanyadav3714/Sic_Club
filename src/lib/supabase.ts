@@ -849,7 +849,9 @@ export function getMockUser(): UserProfile | null {
 export function setMockUser(user: UserProfile | null) {
   if (user) {
     const fixed = fixProfileName(user);
-    safeSetLocalStorage('sic_mock_user', JSON.stringify(fixed));
+    // Ensure avatar_url is cleared for storage to avoid QuotaExceededError
+    const storageUser = { ...fixed, avatar_url: '' };
+    safeSetLocalStorage('sic_mock_user', JSON.stringify(storageUser));
   } else {
     try {
       localStorage.removeItem('sic_mock_user');

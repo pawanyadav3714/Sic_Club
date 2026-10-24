@@ -44,3 +44,11 @@ CREATE POLICY "Anyone can update event announcements" ON public.event_announceme
 
 DROP POLICY IF EXISTS "Anyone can delete event announcements" ON public.event_announcements;
 CREATE POLICY "Anyone can delete event announcements" ON public.event_announcements FOR DELETE USING (true);
+
+ALTER TABLE public.event_announcements ADD COLUMN IF NOT EXISTS problem_statements TEXT[];
+
+-- 4. Update Event Registrations Table
+ALTER TABLE public.event_registrations ADD COLUMN IF NOT EXISTS registration_type TEXT DEFAULT 'individual';
+ALTER TABLE public.event_registrations ADD COLUMN IF NOT EXISTS team_name TEXT;
+ALTER TABLE public.event_registrations ADD COLUMN IF NOT EXISTS category TEXT;
+ALTER TABLE public.event_registrations ADD COLUMN IF NOT EXISTS team_members JSONB;

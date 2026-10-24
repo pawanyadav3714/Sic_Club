@@ -129,6 +129,10 @@ export interface EventProposal {
   submitted_by_name: string;
   submitted_by_role: string;
   submitted_by_avatar?: string;
+  
+  // Problem Statements for competitions/hackathons
+  problem_statements?: string[];
+
   reviewed_by_id?: string;
   reviewed_by_name?: string;
   review_notes?: string;
@@ -147,6 +151,13 @@ export interface EventRegistration {
   phone_no?: string;
   branch?: string;
   registration_no?: string;
+  // Team registration fields
+  registration_type?: 'individual' | 'team';
+  team_name?: string;
+  category?: 'software' | 'hardware';
+  team_members?: { name: string; registration_no: string; branch: string; phone_no: string }[];
+  selected_problem_statement?: string;
+  
   type?: 'confirmed' | 'waitlist';
   status?: 'confirmed' | 'waitlist' | 'waitlisted';
   waitlist_position?: number;

@@ -42,12 +42,29 @@ export default function PublicEventsSection({ onNavigateAuth }: PublicEventsSect
 
   const [selectedEvent, setSelectedEvent] = useState<EventProposal | null>(null);
   const [showRegModal, setShowRegModal] = useState<EventProposal | null>(null);
+
+  // Prevent background scrolling when modal is open
+  useEffect(() => {
+    if (showRegModal) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [showRegModal]);
+
   const [regForm, setRegForm] = useState({
     name: '',
     email: '',
     phone_no: '',
     branch: 'Computer Science & Engineering',
     registration_no: '',
+    registration_type: 'individual',
+    team_name: '',
+    category: 'software',
+    team_members: [],
   });
   const [regResult, setRegResult] = useState<{
     success: boolean;
@@ -94,7 +111,7 @@ export default function PublicEventsSection({ onNavigateAuth }: PublicEventsSect
     };
   }, []);
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showRegModal) return;
 
@@ -103,13 +120,18 @@ export default function PublicEventsSection({ onNavigateAuth }: PublicEventsSect
       return;
     }
 
-    const result = registerForEvent({
+    const result = await registerForEvent({
       event_id: showRegModal.id,
       name: regForm.name.trim(),
       email: regForm.email.trim(),
       phone_no: regForm.phone_no.trim() || undefined,
       branch: regForm.branch,
       registration_no: regForm.registration_no.trim() || undefined,
+      registration_type: regForm.registration_type,
+      team_name: regForm.registration_type === 'team' ? regForm.team_name : undefined,
+      category: regForm.registration_type === 'team' ? regForm.category : undefined,
+      team_members: regForm.registration_type === 'team' ? regForm.team_members : undefined,
+      selected_problem_statement: regForm.selected_problem_statement,
     });
 
     setRegResult(result);
@@ -544,12 +566,12 @@ export default function PublicEventsSection({ onNavigateAuth }: PublicEventsSect
       {/* MODAL 2: INTERACTIVE EVENT REGISTRATION MODAL */}
       <AnimatePresence>
         {showRegModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
+          <div className="fixed inset-0 z-[100] flex items-start justify-center p-4 bg-black/90 backdrop-blur-md overflow-y-auto">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-lg bg-[#0c101d] text-white rounded-[32px] p-6 space-y-5 shadow-2xl border border-cyan-500/40 relative"
+              className="w-full max-w-lg bg-[#0c101d] text-white rounded-[32px] p-6 mt-10 mb-10 space-y-5 shadow-2xl border border-cyan-500/40 relative"
             >
               <button
                 onClick={() => setShowRegModal(null)}
@@ -596,8 +618,57 @@ export default function PublicEventsSection({ onNavigateAuth }: PublicEventsSect
               ) : (
                 <form onSubmit={handleRegisterSubmit} className="space-y-4">
                   <div>
+                    <label className="block text-[11px] font-mono uppercase font-bold text-slate-400 mb-2">Registration Type <span className="text-rose-400">*</span></label>
+                    <div className="flex gap-4">
+                      <label className="flex items-center gap-2 text-sm text-white cursor-pointer">
+                        <input type="radio" checked={regForm.registration_type === 'individual'} onChange={() => setRegForm({...regForm, registration_type: 'individual'})} />
+                        Individual
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-white cursor-pointer">
+                        <input type="radio" checked={regForm.registration_type === 'team'} onChange={() => setRegForm({...regForm, registration_type: 'team'})} />
+                        Team
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-mono uppercase font-bold text-slate-400 mb-1">Team Name</label>
+                    <input type="text" value={regForm.team_name} onChange={(e) => setRegForm({...regForm, team_name: e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs sm:text-sm font-semibold focus:outline-none focus:border-cyan-400" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-mono uppercase font-bold text-slate-400 mb-1">Category</label>
+                    <select value={regForm.category} onChange={(e) => setRegForm({...regForm, category: e.target.value as 'software' | 'hardware'})} className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs sm:text-sm font-semibold focus:outline-none focus:border-cyan-400">
+                      <option value="software">Software</option>
+                      <option value="hardware">Hardware</option>
+                    </select>
+                  </div>
+
+                  {regForm.registration_type === 'team' && (
+                    <div className="space-y-4 pt-2 border-t border-slate-800">
+                      <div className="space-y-2">
+                        <label className="block text-[11px] font-mono uppercase font-bold text-slate-400">Team Members</label>
+                        {regForm.team_members?.map((member, idx) => (
+                          <div key={idx} className="p-3 bg-slate-950 rounded-xl border border-slate-800 grid grid-cols-2 gap-2">
+                             <input placeholder="Name" className="p-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs" value={member.name} onChange={(e) => { const tm = [...regForm.team_members!]; tm[idx].name = e.target.value; setRegForm({...regForm, team_members: tm}); }} />
+                             <input placeholder="Reg No" className="p-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs" value={member.registration_no} onChange={(e) => { const tm = [...regForm.team_members!]; tm[idx].registration_no = e.target.value; setRegForm({...regForm, team_members: tm}); }} />
+                             <select className="p-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs" value={member.branch} onChange={(e) => { const tm = [...regForm.team_members!]; tm[idx].branch = e.target.value; setRegForm({...regForm, team_members: tm}); }}>
+                                <option value="">Branch</option>
+                                <option value="Computer Science and Engineering">Computer Science and Engineering</option>
+                                <option value="Electronics and Electrical Engineering">Electronics and Electrical Engineering</option>
+                                <option value="Mechanical Engineering">Mechanical Engineering</option>
+                                <option value="Civil Engineering">Civil Engineering</option>
+                             </select>
+                             <input placeholder="Phone" className="p-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs" value={member.phone_no} onChange={(e) => { const tm = [...regForm.team_members!]; tm[idx].phone_no = e.target.value; setRegForm({...regForm, team_members: tm}); }} />
+                          </div>
+                        ))}
+                        <button type="button" onClick={() => setRegForm({...regForm, team_members: [...(regForm.team_members || []), { name: '', registration_no: '', branch: '', phone_no: '' }]})} className="w-full py-2 rounded-xl border border-dashed border-slate-700 text-slate-400 text-xs font-bold">+ Add Member</button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
                     <label className="block text-[11px] font-mono uppercase font-bold text-slate-400 mb-1">
-                      Full Name <span className="text-rose-400">*</span>
+                      {regForm.registration_type === 'team' ? 'Team Leader Name' : 'Full Name'} <span className="text-rose-400">*</span>
                     </label>
                     <input
                       type="text"
@@ -605,7 +676,7 @@ export default function PublicEventsSection({ onNavigateAuth }: PublicEventsSect
                       value={regForm.name}
                       onChange={(e) => setRegForm({ ...regForm, name: e.target.value })}
                       placeholder="e.g. Rahul Sharma"
-                      className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs sm:text-sm font-semibold focus:outline-none focus:border-cyan-400"
+                      className={`w-full px-4 py-2.5 rounded-xl border border-slate-700 text-white text-xs sm:text-sm font-semibold focus:outline-none focus:border-cyan-400 ${regForm.registration_type === 'team' ? 'bg-indigo-950/30 border-indigo-500/50' : 'bg-slate-900'}`}
                     />
                   </div>
 
@@ -660,11 +731,10 @@ export default function PublicEventsSection({ onNavigateAuth }: PublicEventsSect
                       onChange={(e) => setRegForm({ ...regForm, branch: e.target.value })}
                       className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs font-semibold focus:outline-none focus:border-cyan-400 cursor-pointer"
                     >
-                      <option value="Computer Science & Engineering">Computer Science & Engineering</option>
-                      <option value="Information Technology">Information Technology</option>
-                      <option value="Electronics & Communication">Electronics & Communication</option>
-                      <option value="Electrical Engineering">Electrical Engineering</option>
+                      <option value="Computer Science and Engineering">Computer Science and Engineering</option>
+                      <option value="Electronics and Electrical Engineering">Electronics and Electrical Engineering</option>
                       <option value="Mechanical Engineering">Mechanical Engineering</option>
+                      <option value="Civil Engineering">Civil Engineering</option>
                     </select>
                   </div>
 
@@ -674,6 +744,24 @@ export default function PublicEventsSection({ onNavigateAuth }: PublicEventsSect
                       Seats limit: <strong>{showRegModal.capacity}</strong>. If capacity fills, incoming submissions are automatically placed on the priority waitlist.
                     </span>
                   </div>
+
+                  {showRegModal.problem_statements && showRegModal.problem_statements.length > 0 && (
+                    <div>
+                      <label className="block text-[11px] font-mono uppercase font-bold text-slate-400 mb-1">
+                        Select Problem Statement <span className="text-rose-400">*</span>
+                      </label>
+                      <select
+                        required
+                        className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs sm:text-sm font-semibold focus:outline-none focus:border-cyan-400 cursor-pointer"
+                        onChange={(e) => setRegForm({...regForm, selected_problem_statement: e.target.value})}
+                      >
+                        <option value="">Select a problem statement</option>
+                        {showRegModal.problem_statements.map((ps, idx) => (
+                          <option key={idx} value={ps}>{ps}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   <div className="pt-2 flex items-center justify-end gap-3">
                     <button

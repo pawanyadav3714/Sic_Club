@@ -34,7 +34,8 @@ import {
   SAMPLE_COVER_IMAGES,
   SAMPLE_TEMPLATE_PROPOSAL,
   purgeFakeAnnouncements,
-  fetchLiveEvents
+  fetchLiveEvents,
+  getEventRegistrations
 } from '../lib/eventStorage';
 
 interface EventProposalsManagerProps {
@@ -51,6 +52,7 @@ export default function EventProposalsManager({
   const [events, setEvents] = useState<EventProposal[]>(() => getStoredEvents());
   const [activeFilter, setActiveFilter] = useState<'all' | 'pending' | 'published' | 'form'>('form');
   const [selectedEventForModal, setSelectedEventForModal] = useState<EventProposal | null>(null);
+  const [viewEnrolledModal, setViewEnrolledModal] = useState<EventProposal | null>(null);
   const [reviewNotesInput, setReviewNotesInput] = useState('');
   const [showReviewModal, setShowReviewModal] = useState<EventProposal | null>(null);
   const [directPublishAsLead, setDirectPublishAsLead] = useState(false);
@@ -113,6 +115,7 @@ export default function EventProposalsManager({
   const [capacity, setCapacity] = useState(60);
   const [visibility, setVisibility] = useState<EventVisibility>('public');
   const [assignedTeam, setAssignedTeam] = useState('Technical Core & Robotics');
+  const [problemStatements, setProblemStatements] = useState<string[]>([]);
 
   // File upload reader for custom cover banner
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -183,6 +186,7 @@ export default function EventProposalsManager({
       review_notes: isDirectPublish ? 'Verified & Published directly by Lead authority.' : undefined,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      problem_statements: problemStatements.filter(ps => ps.trim() !== ''),
     };
 
     const updated = saveEventProposal(newProposal);
@@ -194,6 +198,7 @@ export default function EventProposalsManager({
     setSummary('');
     setDescription('');
     setCustomCoverInput('');
+    setProblemStatements([]);
 
     confetti({ particleCount: 90, spread: 70, origin: { y: 0.6 } });
     showNotification(
@@ -516,6 +521,32 @@ export default function EventProposalsManager({
                     placeholder="Provide full schedule, rules, guidelines, eligibility criteria, software prerequisites..."
                     className="w-full px-4 py-3 rounded-2xl bg-white border border-slate-300 text-slate-900 text-xs sm:text-sm font-medium placeholder:text-slate-400 resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner"
                   />
+                </div>
+
+                {/* Problem Statements definition */}
+                <div className="md:col-span-2 space-y-2">
+                  <label className="block text-[11px] font-mono uppercase font-black text-slate-700">
+                    Define Problem Statements (Optional)
+                  </label>
+                  <div className="space-y-2">
+                    {problemStatements.map((ps, idx) => (
+                      <div key={idx} className="flex gap-2">
+                        <input
+                          type="text"
+                          value={ps}
+                          onChange={(e) => {
+                            const newPs = [...problemStatements];
+                            newPs[idx] = e.target.value;
+                            setProblemStatements(newPs);
+                          }}
+                          placeholder={`Problem Statement ${idx + 1}`}
+                          className="flex-1 px-4 py-3 rounded-2xl bg-white border border-slate-300 text-slate-900 text-sm font-bold shadow-inner focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                        <button type="button" onClick={() => setProblemStatements(problemStatements.filter((_, i) => i !== idx))} className="px-3 py-2 rounded-xl bg-rose-100 text-rose-600 font-bold text-xs">Remove</button>
+                      </div>
+                    ))}
+                    <button type="button" onClick={() => setProblemStatements([...problemStatements, ''])} className="w-full py-3 rounded-2xl border-2 border-dashed border-slate-300 text-slate-500 font-bold text-xs hover:border-indigo-500 hover:text-indigo-600 transition-colors">+ Add Problem Statement</button>
+                  </div>
                 </div>
 
                 {/* Cover Image */}
@@ -989,6 +1020,13 @@ export default function EventProposalsManager({
                           <Eye className="w-3.5 h-3.5 text-slate-600" />
                           <span>View Full Plan</span>
                         </button>
+                        <button
+                          onClick={() => setViewEnrolledModal(ev)}
+                          className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-emerald-200"
+                        >
+                          <Users className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Enrolled Members</span>
+                        </button>
 
                         <div className="flex items-center gap-2">
                           {/* If current user is Lead/Admin and event is pending_review */}
@@ -1261,6 +1299,112 @@ export default function EventProposalsManager({
           </div>
         )}
       </AnimatePresence>
+
+      {/* MODAL 4: ENROLLED MEMBERS DISPLAY */}
+      <AnimatePresence>
+        {viewEnrolledModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-lg bg-white rounded-[28px] p-6 space-y-5 shadow-2xl relative"
+            >
+              <h3 className="text-lg font-black text-slate-900 border-b pb-3">Enrolled Members: {viewEnrolledModal.title}</h3>
+              <EnrolledMembersList eventId={viewEnrolledModal.id} />
+              <button onClick={() => setViewEnrolledModal(null)} className="w-full py-3 rounded-xl bg-slate-900 text-white font-black text-xs uppercase">Close</button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function EnrolledMembersList({ eventId }: { eventId: string }) {
+  const [registrations, setRegistrations] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getEventRegistrations(eventId).then(regs => {
+      setRegistrations(regs);
+      setLoading(false);
+    });
+  }, [eventId]);
+
+  if (loading) return <div className="p-4 text-center text-sm text-slate-500">Loading registrations...</div>;
+  if (registrations.length === 0) return <div className="p-4 text-center text-sm text-slate-500">No registrations found for this event.</div>;
+
+  return (
+    <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+      {registrations.map((reg, idx) => {
+        const isTeam = reg.registration_type === 'team';
+        return (
+          <div 
+            key={idx} 
+            className={`p-5 rounded-3xl border-2 shadow-sm ${isTeam ? 'border-emerald-500/50 bg-emerald-50/50' : 'border-rose-500/50 bg-rose-50/50'}`}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-black text-slate-900 text-sm">
+                {isTeam ? 'Team Registration' : 'Individual Registration'}
+              </h4>
+              <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${isTeam ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                {isTeam ? 'TEAM' : 'INDIVIDUAL'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+              <div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase">Team Name</p>
+                <p className="text-sm font-bold text-slate-900">{reg.team_name || 'N/A'}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase">Category</p>
+                <p className="text-sm font-bold text-slate-900 capitalize">{reg.category || 'N/A'}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+              <div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase">
+                  {isTeam ? 'Team Leader' : 'Full Name'}
+                </p>
+                <p className="text-sm font-bold text-slate-900">{reg.name}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase">Student Email</p>
+                <p className="text-sm font-semibold text-slate-700">{reg.email}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase">Phone / Reg No</p>
+                <p className="text-xs text-slate-700">{reg.phone_no} / {reg.registration_no}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase">Branch</p>
+                <p className="text-xs text-slate-700">{reg.branch}</p>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-black/10">
+              <p className="text-[10px] font-bold text-slate-500 uppercase">Selected Problem Statement</p>
+              <p className="text-xs font-semibold text-indigo-900 mt-0.5">{reg.selected_problem_statement || 'N/A'}</p>
+            </div>
+
+            {isTeam && reg.team_members && (
+              <div className="mt-3 pt-3 border-t border-black/10">
+                <p className="text-[10px] font-bold text-slate-500 uppercase mb-2">Team Members</p>
+                <div className="space-y-1">
+                  {Array.isArray(reg.team_members) ? reg.team_members.map((tm: any, tIdx: number) => (
+                    <div key={tIdx} className="text-[11px] bg-white/50 p-2 rounded-xl border border-black/5">
+                      <span className="font-bold">{tm.name}</span> • {tm.branch} • {tm.registration_no}
+                    </div>
+                  )) : null}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

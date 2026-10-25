@@ -62,8 +62,8 @@ export default function MemberEventsView({ currentUser, announcements }: MemberE
     };
   }, []);
 
-  const handleMemberRegister = (event: EventProposal) => {
-    const res = registerForEvent({
+  const handleMemberRegister = async (event: EventProposal) => {
+    const res = await registerForEvent({
       event_id: event.id,
       user_id: currentUser.id,
       name: `${currentUser.first_name} ${currentUser.last_name}`,

@@ -204,10 +204,30 @@ export async function fetchLiveEvents(): Promise<EventProposal[]> {
 
     if (regError) throw regError;
 
-    const regs = (allRegs as EventRegistration[] || []);
+    const mappedRegs: EventRegistration[] = (allRegs as any[] || []).map(r => ({
+      id: r.id || r.user_id,
+      event_id: r.event_id,
+      name: r.full_name || r.name || 'Anonymous Student',
+      email: r.email,
+      phone_no: r.phone_no,
+      branch: r.branch,
+      registration_no: r.registration_no,
+      registration_type: r.registration_type || 'individual',
+      team_name: r.team_name,
+      category: r.category,
+      team_members: r.team_members,
+      selected_problem_statement: r.selected_problem_statement,
+      status: r.status,
+      waitlist_position: r.waitlist_position,
+      registered_at: r.created_at || r.registered_at || new Date().toISOString(),
+    }));
+
+    try {
+      localStorage.setItem('sic_event_registrations', JSON.stringify(mappedRegs));
+    } catch (e) {}
 
     const eventsWithUpdatedCounts = (remoteEvents as EventProposal[]).map(ev => {
-      const eventRegs = regs.filter(r => r.event_id === ev.id);
+      const eventRegs = mappedRegs.filter(r => r.event_id === ev.id);
       return {
         ...ev,
         registered_count: eventRegs.filter(r => r.status === 'confirmed').length,
@@ -390,6 +410,17 @@ export function purgeFakeAnnouncements(): void {
   } catch (e) {}
 }
 
+export function getStoredEventRegistrations(): EventRegistration[] {
+  try {
+    const raw = localStorage.getItem('sic_event_registrations');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {}
+  return [];
+}
+
 export async function getEventRegistrations(eventId?: string): Promise<EventRegistration[]> {
   if (isSupabaseConfigured && supabase) {
     try {
@@ -397,12 +428,61 @@ export async function getEventRegistrations(eventId?: string): Promise<EventRegi
       if (eventId) {
         query = query.eq('event_id', eventId);
       }
-      const { data, error } = await query;
-      if (!error && data) return data as EventRegistration[];
+      // Strict 2.5s timeout so database latency never freezes UI
+      const timeoutPromise = new Promise<{ data: any; error: any }>((_, reject) =>
+        setTimeout(() => reject(new Error('Supabase query timeout')), 2500)
+      );
+      const { data, error } = (await Promise.race([query, timeoutPromise])) as any;
+
+      if (!error && Array.isArray(data)) {
+        const mapped = (data as any[]).map((r) => ({
+          id: r.id || r.user_id,
+          event_id: r.event_id,
+          name: r.full_name || r.name || 'Anonymous Student',
+          email: r.email,
+          phone_no: r.phone_no,
+          branch: r.branch,
+          registration_no: r.registration_no,
+          registration_type: r.registration_type || 'individual',
+          team_name: r.team_name,
+          category: r.category,
+          team_members: r.team_members,
+          selected_problem_statement: r.selected_problem_statement,
+          status: r.status,
+          waitlist_position: r.waitlist_position,
+          registered_at: r.created_at || r.registered_at || new Date().toISOString(),
+        }));
+
+        try {
+          if (!eventId) {
+            localStorage.setItem('sic_event_registrations', JSON.stringify(mapped));
+          } else {
+            const currentOther = getStoredEventRegistrations().filter((r) => r.event_id !== eventId);
+            localStorage.setItem('sic_event_registrations', JSON.stringify([...currentOther, ...mapped]));
+          }
+        } catch (e) {}
+
+        return mapped;
+      }
     } catch (e) {
-      console.error('Error fetching registrations from Supabase:', e);
+      console.warn('Direct database sync failed or timed out:', e);
     }
   }
+
+  // Fallback to localStorage
+  try {
+    const raw = localStorage.getItem('sic_event_registrations');
+    if (raw) {
+      const parsed: EventRegistration[] = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        if (eventId) {
+          return parsed.filter((r) => r.event_id === eventId);
+        }
+        return parsed;
+      }
+    }
+  } catch (e) {}
+
   return [];
 }
 
@@ -465,11 +545,17 @@ export async function registerForEvent(registration: {
     const newReg: EventRegistration = {
       id: `reg-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       event_id: registration.event_id,
+      user_id: registration.user_id,
       name: registration.name,
       email: registration.email,
       phone_no: registration.phone_no,
       branch: registration.branch,
       registration_no: registration.registration_no,
+      registration_type: registration.registration_type || 'individual',
+      team_name: registration.team_name?.trim() || undefined,
+      category: registration.category || undefined,
+      team_members: registration.team_members,
+      selected_problem_statement: registration.selected_problem_statement,
       registered_at: new Date().toISOString(),
       status: isWaitlist ? 'waitlisted' : 'confirmed',
       waitlist_position: isWaitlist ? waitlistCount + 1 : undefined,
@@ -480,24 +566,32 @@ export async function registerForEvent(registration: {
     event.waitlist_count = waitlistCount + (isWaitlist ? 1 : 0);
     saveEventProposal(event);
 
+    // Sync locally
+    try {
+      const rawRegs = localStorage.getItem('sic_event_registrations');
+      const list = rawRegs ? JSON.parse(rawRegs) : [];
+      list.push(newReg);
+      localStorage.setItem('sic_event_registrations', JSON.stringify(list));
+    } catch (e) {}
+
     // Sync to Supabase
     if (isSupabaseConfigured && supabase) {
         const { error } = await supabase.from('event_registrations').insert([
             {
               event_id: newReg.event_id,
-              user_id: newReg.id, // Or appropriate mapping
+              user_id: newReg.id,
               full_name: newReg.name,
               email: newReg.email,
-              phone_no: newReg.phone_no,
-              registration_no: newReg.registration_no,
-              branch: newReg.branch,
-              registration_type: registration.registration_type,
-              team_name: registration.team_name,
-              category: registration.category,
-              team_members: registration.team_members,
-              selected_problem_statement: registration.selected_problem_statement,
+              phone_no: newReg.phone_no || null,
+              registration_no: newReg.registration_no || null,
+              branch: newReg.branch || null,
+              registration_type: newReg.registration_type,
+              team_name: newReg.team_name || null,
+              category: newReg.category || null,
+              team_members: newReg.team_members && newReg.team_members.length > 0 ? newReg.team_members : null,
+              selected_problem_statement: newReg.selected_problem_statement || null,
               status: newReg.status,
-              waitlist_position: newReg.waitlist_position
+              waitlist_position: newReg.waitlist_position || null
             }
         ]);
         if (error) throw error;

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserProfile, MembershipApplication, Announcement, EventProposal, EventCategory } from '../types';
+import { UserProfile, MembershipApplication, Announcement, EventProposal, EventCategory, EventRegistration } from '../types';
 import {
   supabase,
   isSupabaseConfigured,
@@ -24,7 +24,7 @@ import {
 } from '../lib/supabase';
 import DirectChatWorkspace from '../components/DirectChatWorkspace';
 import EventProposalsManager from '../components/EventProposalsManager';
-import { getStoredEvents, saveEventProposal } from '../lib/eventStorage';
+import { getStoredEvents, saveEventProposal, getStoredEventRegistrations, getEventRegistrations, CATEGORY_LABELS } from '../lib/eventStorage';
 import { markMessagesAsDelivered, markUserPresence } from '../lib/chatStore';
 import {
   ShieldAlert,
@@ -52,6 +52,8 @@ import {
   RefreshCw,
   LogOut,
   ArrowRight,
+  ArrowLeft,
+  CheckCheck,
   Crown,
   MapPin,
   Calendar as CalendarIcon,
@@ -74,7 +76,10 @@ import {
   Phone,
   MessageSquare,
   MessagesSquare,
-  Camera
+  Camera,
+  FileSpreadsheet,
+  TrendingUp,
+  ChevronDown
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -112,6 +117,9 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
   const [allProfiles, setAllProfiles] = useState<UserProfile[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>(() => getStoredAnnouncements());
   const [eventProposals, setEventProposals] = useState(() => getStoredEvents());
+  const [eventRegistrations, setEventRegistrations] = useState<EventRegistration[]>(() => getStoredEventRegistrations());
+  const [selectedChartEventId, setSelectedChartEventId] = useState<string>('');
+  const [chartViewMode, setChartViewMode] = useState<'graph' | 'excel' | 'ps'>('graph');
   
   // Multi-Core Council Management
   const [activeCoreUser, setActiveCoreUser] = useState<UserProfile>(() => fixProfileName(currentUser));
@@ -228,24 +236,36 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
     };
   }, []);
 
-  // Event Proposals sync listener
+  // Event Proposals & Registrations sync listener
   useEffect(() => {
+    // Initial fetch from database
+    getEventRegistrations().then((regs) => {
+      if (regs && Array.isArray(regs)) setEventRegistrations(regs);
+    });
+
     const handleEventsSync = (e: any) => {
       if (e?.detail) setEventProposals(e.detail);
       else setEventProposals(getStoredEvents());
+      setEventRegistrations(getStoredEventRegistrations());
     };
     window.addEventListener('sic_events_updated', handleEventsSync);
+    window.addEventListener('storage', handleEventsSync);
+
     let bc: BroadcastChannel | null = null;
     try {
       if (typeof BroadcastChannel !== 'undefined') {
         bc = new BroadcastChannel('sic_events_channel');
         bc.onmessage = (msg) => {
-          if (msg.data?.events) setEventProposals(msg.data.events);
+          if (msg.data?.events) {
+            setEventProposals(msg.data.events);
+            setEventRegistrations(getStoredEventRegistrations());
+          }
         };
       }
     } catch (e) {}
     return () => {
       window.removeEventListener('sic_events_updated', handleEventsSync);
+      window.removeEventListener('storage', handleEventsSync);
       if (bc) bc.close();
     };
   }, []);
@@ -276,6 +296,51 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Student Members');
     XLSX.writeFile(workbook, 'Student_Members.xlsx');
+  };
+
+  const exportPendingApplicationsToExcel = () => {
+    if (applications.length === 0) {
+      showNotification('No pending applications to export.', 'info');
+      return;
+    }
+    const data = applications.map((app, idx) => {
+      const u = app.user;
+      return {
+        '#': idx + 1,
+        'Name': u ? `${u.first_name} ${u.last_name}` : 'Unknown',
+        'Email': u?.email || 'N/A',
+        'Roll / Reg No': u?.registration_no || 'N/A',
+        'Domain': u?.domain || 'N/A',
+        'Branch': u?.branch || 'N/A',
+        'Session': u?.session || 'N/A',
+        'Mobile': u?.phone_no || 'N/A',
+        'Applied Date': app.created_at ? new Date(app.created_at).toLocaleString() : 'N/A',
+        'Status': 'PENDING APPROVAL',
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Pending Applications');
+    XLSX.writeFile(workbook, 'SIC_Pending_Applications.xlsx');
+    showNotification('Pending applications roster exported to Excel (.xlsx)', 'success');
+  };
+
+  const handleApproveAllPending = async () => {
+    if (applications.length === 0) return;
+    const confirmApprove = window.confirm(
+      `Are you sure you want to approve all ${applications.length} pending student applications and admit them to the club?`
+    );
+    if (!confirmApprove) return;
+
+    const appsToApprove = [...applications];
+    for (const app of appsToApprove) {
+      if (app.user) {
+        await handleApprove(app.user.id, `${app.user.first_name} ${app.user.last_name}`);
+      }
+    }
+    confetti({ particleCount: 150, spread: 100, origin: { y: 0.5 } });
+    showNotification(`Successfully approved all ${appsToApprove.length} pending candidate applications!`, 'success');
   };
 
   // Load all student details, pending requests, accepted members, and declined applications
@@ -826,6 +891,206 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
     return matchesSearch && matchesDomain;
   });
 
+  // -------------------------------------------------------------------------
+  // ACTUAL ANNOUNCED EVENT & ENROLLED STUDENTS ANALYTICS (REAL DATABASE FEED)
+  // -------------------------------------------------------------------------
+  const publishedEvents = eventProposals.filter((e) => e.status === 'published' || e.status === 'approved');
+  const activeEventsList = publishedEvents.length > 0 ? publishedEvents : eventProposals;
+  const currentChartEvent = activeEventsList.find((e) => e.id === selectedChartEventId) || activeEventsList[0] || null;
+
+  const currentEventRegs = currentChartEvent
+    ? eventRegistrations.filter((r) => r.event_id === currentChartEvent.id)
+    : [];
+
+  const totalEnrolledStudents = currentEventRegs.length;
+
+  const confirmedSeatsCount = currentEventRegs.filter((r) => r.status === 'confirmed').length;
+  const waitlistedSeatsCount = currentEventRegs.filter((r) => r.status === 'waitlisted').length;
+
+  const timelineData = React.useMemo(() => {
+    const sorted = [...currentEventRegs].sort(
+      (a, b) => new Date(a.registered_at || 0).getTime() - new Date(b.registered_at || 0).getTime()
+    );
+
+    const now = Date.now();
+    let minTime = sorted.length > 0 ? new Date(sorted[0].registered_at || now).getTime() : now - 24 * 3600 * 1000;
+    let maxTime = sorted.length > 0 ? Math.max(new Date(sorted[sorted.length - 1].registered_at || now).getTime(), now) : now;
+
+    if (maxTime - minTime < 8 * 3600 * 1000) {
+      minTime = maxTime - 24 * 3600 * 1000;
+    }
+
+    const intervals = 7;
+    const step = (maxTime - minTime) / (intervals - 1);
+    const pts = [];
+
+    for (let i = 0; i < intervals; i++) {
+      const targetTime = minTime + i * step;
+      const eligibleRegs = sorted.filter((r) => new Date(r.registered_at || 0).getTime() <= targetTime);
+      const studentCount = eligibleRegs.reduce((sum, r) => {
+        if (r.registration_type === 'team' && Array.isArray(r.team_members) && r.team_members.length > 0) {
+          const hasLeader = r.team_members.some((m) => m.name && r.name && m.name.toLowerCase() === r.name.toLowerCase());
+          return sum + r.team_members.length + (hasLeader ? 0 : 1);
+        }
+        return sum + 1;
+      }, 0);
+
+      const d = new Date(targetTime);
+      const label =
+        maxTime - minTime > 36 * 3600 * 1000
+          ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+          : `${String(d.getHours()).padStart(2, '0')}:00`;
+
+      pts.push({
+        index: i,
+        time: targetTime,
+        label,
+        count: studentCount,
+      });
+    }
+
+    const maxVal = Math.max(...pts.map((p) => p.count), 1);
+    const coords = pts.map((p, i) => {
+      const x = (i / (intervals - 1)) * 500;
+      const y = 130 - (p.count / maxVal) * 100;
+      return { ...p, x, y };
+    });
+
+    let strokePath = `M ${coords[0].x},${coords[0].y}`;
+    for (let i = 0; i < coords.length - 1; i++) {
+      const p0 = coords[i];
+      const p1 = coords[i + 1];
+      const mx = (p0.x + p1.x) / 2;
+      strokePath += ` C ${mx},${p0.y} ${mx},${p1.y} ${p1.x},${p1.y}`;
+    }
+
+    const areaPath = `${strokePath} L 500,150 L 0,150 Z`;
+
+    return {
+      pts: coords,
+      strokePath,
+      areaPath,
+      peakCount: Math.max(...pts.map((p) => p.count), 0),
+    };
+  }, [currentEventRegs]);
+
+  // Problem Statement Analytics (Real Data from the Event Announcement)
+  const psStats = React.useMemo(() => {
+    // Initialize counts using the actual problem statements announced by admin/core-member
+    const counts: Record<string, { students: number; candidates: number }> = {};
+    
+    // Seed with official problem statements from the event proposal
+    if (currentChartEvent?.problem_statements && Array.isArray(currentChartEvent.problem_statements)) {
+      currentChartEvent.problem_statements.forEach(ps => {
+        if (ps) counts[ps.trim()] = { students: 0, candidates: 0 };
+      });
+    }
+
+    currentEventRegs.forEach((r) => {
+      const rawPs = r.selected_problem_statement || 'Other / General';
+      const ps = rawPs.trim();
+      
+      if (!counts[ps]) {
+        counts[ps] = { students: 0, candidates: 0 };
+      }
+      
+      counts[ps].candidates += 1;
+      
+      let memberCount = 1;
+      if (r.registration_type === 'team' && Array.isArray(r.team_members) && r.team_members.length > 0) {
+        const hasLeader = r.team_members.some((m) => m.name && r.name && m.name.toLowerCase() === r.name.toLowerCase());
+        memberCount = r.team_members.length + (hasLeader ? 0 : 1);
+      }
+      counts[ps].students += memberCount;
+    });
+
+    const entriesList = Object.entries(counts).map(([label, data]) => ({
+      label,
+      ...data
+    }));
+
+    // Sort by popularity (student enrollment)
+    const sortedEntries = entriesList.sort((a, b) => b.students - a.students);
+    const globalMax = Math.max(...sortedEntries.map(e => Math.max(e.students, e.candidates)), 1);
+
+    return { entries: sortedEntries, maxVal: globalMax };
+  }, [currentEventRegs, currentChartEvent]);
+
+  // Problem Statement Donut Distribution (Puzzle Style with Partitions)
+  const psDonutSegments = React.useMemo(() => {
+    const segments = psStats.entries.filter(e => e.candidates > 0);
+    if (segments.length === 0) return [];
+    
+    const totalCandidatesInPS = segments.reduce((sum, e) => sum + e.candidates, 0);
+    
+    // We want clear partitions (gaps) between segments
+    // A 4% gap per segment provides a nice 'puzzle' look
+    const gapSize = segments.length > 1 ? 4 : 0; 
+    const totalGapLength = segments.length * gapSize;
+    const usableLength = 100 - totalGapLength;
+    
+    let cumulativeOffset = 0;
+    
+    return segments.map((e, idx) => {
+      const rawPercent = (e.candidates / (totalCandidatesInPS || 1));
+      const visualLength = rawPercent * usableLength;
+      
+      const segment = {
+        label: e.label,
+        percent: Math.round(rawPercent * 100),
+        count: e.candidates,
+        // stroke-dasharray format: [length of dash], [length of gap to reach 100]
+        dashArray: `${visualLength}, 100`,
+        // The offset must account for the previous segments AND the gaps between them
+        dashOffset: `-${cumulativeOffset}`,
+        color: ['#38bdf8', '#f59e0b', '#a855f7', '#10b981', '#f43f5e'][idx % 5],
+        shadow: ['#38bdf8', '#f59e0b', '#a855f7', '#10b981', '#f43f5e'][idx % 5]
+      };
+      
+      // Accumulate the length of the segment plus the gap for the next offset
+      cumulativeOffset += (visualLength + gapSize);
+      
+      return segment;
+    });
+  }, [psStats]);
+
+  const handleExportExcelChart = () => {
+    if (!currentChartEvent) return;
+    const exportRows = currentEventRegs.map((r, idx) => {
+      let membersStr = 'N/A';
+      if (r.registration_type === 'team' && Array.isArray(r.team_members) && r.team_members.length > 0) {
+        membersStr = r.team_members
+          .map((m, mIdx) => `${mIdx + 1}. ${m.name} (${m.registration_no || 'No Reg'}) [${m.branch || 'Branch'}]`)
+          .join('; ');
+      }
+      return {
+        '#': idx + 1,
+        'Event Title': currentChartEvent.title,
+        'Category / Track': (r.category || currentChartEvent.category || '').toUpperCase(),
+        'Registration Type': (r.registration_type || 'individual').toUpperCase(),
+        'Team Name': r.team_name || '-',
+        'Candidate / Team Leader': r.name,
+        'Email Address': r.email,
+        'Phone Number': r.phone_no || '-',
+        'Roll / Registration No': r.registration_no || '-',
+        'Branch': r.branch || '-',
+        'Selected Problem Statement': r.selected_problem_statement || '-',
+        'Team Roster': membersStr,
+        'Admission Status': (r.status || 'confirmed').toUpperCase(),
+        'Registration Time': r.registered_at ? new Date(r.registered_at).toLocaleString() : '-'
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(
+      exportRows.length > 0 ? exportRows : [{ Note: 'No registered students yet for this announced event.' }]
+    );
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Enrolled Students');
+    const safeTitle = currentChartEvent.title.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30);
+    XLSX.writeFile(workbook, `${safeTitle}_Enrolled_Students.xlsx`);
+    showNotification(`Excel roster exported for ${currentChartEvent.title}`);
+  };
+
   return (
     <div className={`min-h-screen bg-gradient-to-br from-[#e6edf5] via-[#f2f4f8] to-[#e0f2fe] text-slate-800 flex font-['Plus_Jakarta_Sans',sans-serif] relative overflow-x-hidden selection:bg-purple-500 selection:text-slate-900 ${
       activeTab === 'chat' ? 'p-1.5 sm:p-4 pb-20 sm:pb-6' : 'p-2 sm:p-4 pb-28'
@@ -896,6 +1161,26 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
               }`}>LIVE</span>
             </button>
 
+            <button
+              onClick={() => setActiveTab('applications')}
+              className={`w-full px-3.5 py-3 rounded-2xl font-extrabold text-xs flex items-center justify-between cursor-pointer transition-all ${
+                activeTab === 'applications'
+                  ? 'glass-nav-btn-active bg-gradient-to-r from-amber-500/20 to-amber-600/20 border-amber-400/50 text-slate-900 shadow-md'
+                  : 'glass-nav-btn text-slate-700 hover:text-slate-900'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Clock className={`w-4 h-4 ${activeTab === 'applications' ? 'text-amber-600' : 'text-amber-500'}`} />
+                <span>Pending Approvals</span>
+              </div>
+              <span className={`text-[10px] font-mono font-black px-2 py-0.5 rounded-full ${
+                applications.length > 0
+                  ? 'bg-amber-500 text-white animate-pulse shadow-xs'
+                  : 'bg-slate-200 text-slate-600'
+              }`}>
+                {applications.length}
+              </span>
+            </button>
 
             <button
               onClick={() => setActiveTab('members')}
@@ -1015,8 +1300,8 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
       </aside>
 
       {/* MAIN BODY AREA */}
-      <main className={`flex-1 min-w-0 flex flex-col z-10 ${
-        activeTab === 'chat' ? 'space-y-0 h-[calc(100dvh-82px)] sm:h-[calc(100vh-48px)]' : 'space-y-5'
+      <main className={`flex-1 min-w-0 flex flex-col ${
+        activeTab === 'chat' ? 'space-y-0 h-[calc(100dvh-82px)] sm:h-[calc(100vh-48px)]' : 'space-y-5 pb-32 sm:pb-8'
       }`}>
         {/* TOP HEADER BAR (EXACT CLAYMORPHISM MATCHING REFERENCE IMAGE) - ONLY VISIBLE ON DASHBOARD TAB */}
         {activeTab === 'dashboard' && (
@@ -1120,23 +1405,23 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4 lg:gap-6">
                   {/* Card 1: AWAITING TRIAGE */}
                   <div
                     onClick={() => setActiveTab('applications')}
-                    className="p-5 rounded-[28px] bg-gradient-to-br from-[#fde047] via-[#f59e0b] to-[#d97706] border-2 border-[#fef08a] shadow-[10px_14px_28px_rgba(217,119,6,0.48),-8px_-8px_20px_rgba(255,255,255,0.95),inset_3px_3px_6px_rgba(255,255,255,0.9),inset_-3px_-4px_8px_rgba(120,53,15,0.4)] space-y-3 relative overflow-hidden group hover:-translate-y-1 hover:shadow-[12px_16px_32px_rgba(217,119,6,0.58)] active:translate-y-0.5 transition-all duration-200 cursor-pointer"
+                    className="p-4 sm:p-5 rounded-[28px] bg-gradient-to-br from-[#fde047] via-[#f59e0b] to-[#d97706] border-2 border-[#fef08a] shadow-[8px_12px_24px_rgba(217,119,6,0.35),-6px_-6px_16px_rgba(255,255,255,0.9),inset_2px_2px_4px_rgba(255,255,255,0.8),inset_-2px_-3px_6px_rgba(120,53,15,0.3)] space-y-3 relative overflow-hidden group hover:-translate-y-1 hover:shadow-[10px_14px_28px_rgba(217,119,6,0.45)] active:translate-y-0.5 transition-all duration-200 cursor-pointer"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-mono uppercase font-black tracking-wider text-[#451a03]">AWAITING TRIAGE</span>
-                      <div className="p-2.5 rounded-2xl bg-amber-950/20 text-[#451a03] shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.85),inset_-1.5px_-1.5px_3px_rgba(120,53,15,0.4)] border border-amber-400/60">
-                        <AlertTriangle className="w-4 h-4" />
+                      <span className="text-[9px] sm:text-[10px] xl:text-[11px] font-mono uppercase font-black tracking-wider text-[#451a03]">AWAITING TRIAGE</span>
+                      <div className="p-2 sm:p-2.5 rounded-2xl bg-amber-950/15 text-[#451a03] border border-amber-400/50 shadow-sm">
+                        <AlertTriangle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       </div>
                     </div>
                     <div className="space-y-0.5">
-                      <p className="text-3xl sm:text-4xl font-black text-[#451a03] font-mono tracking-tight drop-shadow-sm">{applications.length}</p>
-                      <p className="text-[10px] text-[#451a03]/90 font-mono font-black flex items-center gap-1">
+                      <p className="text-2xl sm:text-3xl xl:text-4xl font-black text-[#451a03] font-mono tracking-tight leading-none">{applications.length}</p>
+                      <p className="text-[9px] sm:text-[10px] text-[#451a03]/80 font-mono font-black flex items-center gap-1">
                         <span>requires decision</span>
-                        <ArrowRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
+                        <ArrowRight className="w-2.5 h-2.5 group-hover:translate-x-1 transition-transform" />
                       </p>
                     </div>
                   </div>
@@ -1144,19 +1429,19 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
                   {/* Card 2: ACTIVE MEMBERS */}
                   <div
                     onClick={() => setActiveTab('members')}
-                    className="p-5 rounded-[28px] bg-gradient-to-br from-[#34d399] via-[#059669] to-[#047857] border-2 border-[#6ee7b7] shadow-[10px_14px_28px_rgba(4,120,87,0.48),-8px_-8px_20px_rgba(255,255,255,0.95),inset_3px_3px_6px_rgba(255,255,255,0.9),inset_-3px_-4px_8px_rgba(2,44,34,0.4)] space-y-3 relative overflow-hidden group hover:-translate-y-1 hover:shadow-[12px_16px_32px_rgba(4,120,87,0.58)] active:translate-y-0.5 transition-all duration-200 cursor-pointer"
+                    className="p-4 sm:p-5 rounded-[28px] bg-gradient-to-br from-[#34d399] via-[#059669] to-[#047857] border-2 border-[#6ee7b7] shadow-[8px_12px_24px_rgba(4,120,87,0.35),-6px_-6px_16px_rgba(255,255,255,0.9),inset_2px_2px_4px_rgba(255,255,255,0.8),inset_-2px_-3px_6px_rgba(2,44,34,0.3)] space-y-3 relative overflow-hidden group hover:-translate-y-1 hover:shadow-[10px_14px_28px_rgba(4,120,87,0.45)] active:translate-y-0.5 transition-all duration-200 cursor-pointer"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-mono uppercase font-black tracking-wider text-emerald-950">ACTIVE MEMBERS</span>
-                      <div className="p-2.5 rounded-2xl bg-emerald-950/20 text-emerald-950 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.85),inset_-1.5px_-1.5px_3px_rgba(2,44,34,0.4)] border border-emerald-300/60">
-                        <Zap className="w-4 h-4" />
+                      <span className="text-[9px] sm:text-[10px] xl:text-[11px] font-mono uppercase font-black tracking-wider text-emerald-950">ACTIVE MEMBERS</span>
+                      <div className="p-2 sm:p-2.5 rounded-2xl bg-emerald-950/15 text-emerald-950 border border-emerald-300/50 shadow-sm">
+                        <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       </div>
                     </div>
                     <div className="space-y-0.5">
-                      <p className="text-3xl sm:text-4xl font-black text-emerald-950 font-mono tracking-tight drop-shadow-sm">{approvedMembers.length}</p>
-                      <p className="text-[10px] text-emerald-950/90 font-mono font-black flex items-center gap-1">
+                      <p className="text-2xl sm:text-3xl xl:text-4xl font-black text-emerald-950 font-mono tracking-tight leading-none">{approvedMembers.length}</p>
+                      <p className="text-[9px] sm:text-[10px] text-emerald-950/80 font-mono font-black flex items-center gap-1">
                         <span>accepted in roster</span>
-                        <ArrowRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
+                        <ArrowRight className="w-2.5 h-2.5 group-hover:translate-x-1 transition-transform" />
                       </p>
                     </div>
                   </div>
@@ -1164,12 +1449,12 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
                   {/* Card 3: DECLINED REQS */}
                   <div
                     onClick={() => setActiveTab('rejected')}
-                    className="p-5 rounded-[28px] bg-gradient-to-br from-[#fb7185] via-[#e11d48] to-[#9f1239] border-2 border-[#fda4af] shadow-[10px_14px_28px_rgba(159,18,57,0.48),-8px_-8px_20px_rgba(255,255,255,0.95),inset_3px_3px_6px_rgba(255,255,255,0.9),inset_-3px_-4px_8px_rgba(76,5,25,0.4)] space-y-3 relative overflow-hidden group hover:-translate-y-1 hover:shadow-[12px_16px_32px_rgba(159,18,57,0.58)] active:translate-y-0.5 transition-all duration-200 cursor-pointer"
+                    className="p-4 sm:p-5 rounded-[28px] bg-gradient-to-br from-[#fb7185] via-[#e11d48] to-[#9f1239] border-2 border-[#fda4af] shadow-[8px_12px_24px_rgba(159,18,57,0.35),-6px_-6px_16px_rgba(255,255,255,0.9),inset_2px_2px_4px_rgba(255,255,255,0.8),inset_-2px_-3px_6px_rgba(76,5,25,0.3)] space-y-3 relative overflow-hidden group hover:-translate-y-1 hover:shadow-[10px_14px_28px_rgba(159,18,57,0.45)] active:translate-y-0.5 transition-all duration-200 cursor-pointer"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-mono uppercase font-black tracking-wider text-rose-950">DECLINED REQS</span>
-                      <div className="p-2.5 rounded-2xl bg-rose-950/20 text-rose-950 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.85),inset_-1.5px_-1.5px_3px_rgba(76,5,25,0.4)] border border-rose-300/60">
-                        <ShieldAlert className="w-4 h-4" />
+                      <span className="text-[9px] sm:text-[10px] xl:text-[11px] font-mono uppercase font-black tracking-wider text-rose-950">DECLINED REQS</span>
+                      <div className="p-2 sm:p-2.5 rounded-2xl bg-rose-950/15 text-rose-950 border border-rose-300/50 shadow-sm">
+                        <ShieldAlert className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       </div>
                     </div>
                     <div className="space-y-0.5">
@@ -1184,26 +1469,26 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
                   {/* Card 4: EVENT PIPELINE & PROPOSALS */}
                   <div
                     onClick={() => setActiveTab('events')}
-                    className="p-5 rounded-[28px] bg-gradient-to-br from-[#c084fc] via-[#9333ea] to-[#6b21a8] border-2 border-[#d8b4fe] shadow-[10px_14px_28px_rgba(107,33,168,0.48),-8px_-8px_20px_rgba(255,255,255,0.95),inset_3px_3px_6px_rgba(255,255,255,0.9),inset_-3px_-4px_8px_rgba(59,7,100,0.4)] space-y-3 relative overflow-hidden group hover:-translate-y-1 hover:shadow-[12px_16px_32px_rgba(107,33,168,0.58)] active:translate-y-0.5 transition-all duration-200 cursor-pointer"
+                    className="p-4 sm:p-5 rounded-[28px] bg-gradient-to-br from-[#c084fc] via-[#9333ea] to-[#6b21a8] border-2 border-[#d8b4fe] shadow-[8px_12px_24px_rgba(107,33,168,0.35),-6px_-6px_16px_rgba(255,255,255,0.9),inset_2px_2px_4px_rgba(255,255,255,0.8),inset_-2px_-3px_6px_rgba(59,7,100,0.3)] space-y-3 relative overflow-hidden group hover:-translate-y-1 hover:shadow-[10px_14px_28px_rgba(107,33,168,0.45)] active:translate-y-0.5 transition-all duration-200 cursor-pointer"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-mono uppercase font-black tracking-wider text-purple-950">EVENT PIPELINE</span>
-                      <div className="p-2.5 rounded-2xl bg-purple-950/20 text-purple-950 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.85),inset_-1.5px_-1.5px_3px_rgba(59,7,100,0.4)] border border-purple-300/60">
-                        <Calendar className="w-4 h-4" />
+                      <span className="text-[9px] sm:text-[10px] xl:text-[11px] font-mono uppercase font-black tracking-wider text-purple-950">EVENT PIPELINE</span>
+                      <div className="p-2 sm:p-2.5 rounded-2xl bg-purple-950/15 text-purple-950 border border-purple-300/50 shadow-sm">
+                        <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       </div>
                     </div>
                     <div className="space-y-0.5">
-                      <div className="flex items-baseline gap-2">
-                        <p className="text-3xl sm:text-4xl font-black text-purple-950 font-mono tracking-tight drop-shadow-sm">{eventProposals.length}</p>
+                      <div className="flex items-baseline gap-1.5">
+                        <p className="text-2xl sm:text-3xl xl:text-4xl font-black text-purple-950 font-mono tracking-tight leading-none">{eventProposals.length}</p>
                         {eventProposals.filter((p) => p.status === 'pending_review').length > 0 && (
-                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-400 text-amber-950 shadow-sm animate-pulse">
-                            {eventProposals.filter((p) => p.status === 'pending_review').length} pending
+                          <span className="text-[8px] xl:text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-full bg-amber-400 text-amber-950 shadow-sm animate-pulse">
+                            {eventProposals.filter((p) => p.status === 'pending_review').length}
                           </span>
                         )}
                       </div>
-                      <p className="text-[10px] text-purple-950/90 font-mono font-black flex items-center gap-1">
-                        <span>proposals & approval flow</span>
-                        <ArrowRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
+                      <p className="text-[9px] sm:text-[10px] text-purple-950/80 font-mono font-black flex items-center gap-1">
+                        <span>proposals & flow</span>
+                        <ArrowRight className="w-2.5 h-2.5 group-hover:translate-x-1 transition-transform" />
                       </p>
                     </div>
                   </div>
@@ -1211,160 +1496,435 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
                   {/* Card 5: CORE LEADS */}
                   <div
                     onClick={() => setActiveTab('council')}
-                    className="p-5 rounded-[28px] bg-gradient-to-br from-[#38bdf8] via-[#0284c7] to-[#0369a1] border-2 border-[#7dd3fc] shadow-[10px_14px_28px_rgba(3,105,161,0.48),-8px_-8px_20px_rgba(255,255,255,0.95),inset_3px_3px_6px_rgba(255,255,255,0.9),inset_-3px_-4px_8px_rgba(8,47,73,0.4)] space-y-3 relative overflow-hidden group hover:-translate-y-1 hover:shadow-[12px_16px_32px_rgba(3,105,161,0.58)] active:translate-y-0.5 transition-all duration-200 cursor-pointer"
+                    className="p-4 sm:p-5 rounded-[28px] bg-gradient-to-br from-[#38bdf8] via-[#0284c7] to-[#0369a1] border-2 border-[#7dd3fc] shadow-[8px_12px_24px_rgba(3,105,161,0.35),-6px_-6px_16px_rgba(255,255,255,0.9),inset_2px_2px_4px_rgba(255,255,255,0.8),inset_-2px_-3px_6px_rgba(8,47,73,0.3)] space-y-3 relative overflow-hidden group hover:-translate-y-1 hover:shadow-[10px_14px_28px_rgba(3,105,161,0.45)] active:translate-y-0.5 transition-all duration-200 cursor-pointer"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-mono uppercase font-black tracking-wider text-sky-950">CORE LEADS</span>
-                      <div className="p-2.5 rounded-2xl bg-sky-950/20 text-sky-950 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.85),inset_-1.5px_-1.5px_3px_rgba(8,47,73,0.4)] border border-sky-300/60">
-                        <Radio className="w-4 h-4" />
+                      <span className="text-[9px] sm:text-[10px] xl:text-[11px] font-mono uppercase font-black tracking-wider text-sky-950">CORE LEADS</span>
+                      <div className="p-2 sm:p-2.5 rounded-2xl bg-sky-950/15 text-sky-950 border border-sky-300/50 shadow-sm">
+                        <Radio className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       </div>
                     </div>
                     <div className="space-y-0.5">
-                      <p className="text-3xl sm:text-4xl font-black text-sky-950 font-mono tracking-tight drop-shadow-sm">{coreCouncilList.length}/{coreCouncilList.length}</p>
-                      <p className="text-[10px] text-sky-950/90 font-mono font-black flex items-center gap-1">
+                      <p className="text-2xl sm:text-3xl xl:text-4xl font-black text-sky-950 font-mono tracking-tight leading-none">{coreCouncilList.length}</p>
+                      <p className="text-[9px] sm:text-[10px] text-sky-950/80 font-mono font-black flex items-center gap-1">
                         <span>council active</span>
-                        <ArrowRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
+                        <ArrowRight className="w-2.5 h-2.5 group-hover:translate-x-1 transition-transform" />
                       </p>
                     </div>
                   </div>
                 </div>
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* 1. Events Timeline Chart (2/3 width) */}
-                <div className="lg:col-span-2 p-6 rounded-[28px] glass-panel text-slate-900 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h2 className="text-sm font-extrabold tracking-tight text-slate-900">Events Timeline — Last 24h</h2>
-                      <p className="text-xs text-slate-700">Real-time candidate registration and application spikes</p>
+                {/* 1. ACTUAL ANNOUNCED EVENT: REAL REGISTRATION VS TIME GRAPH & EXCEL ROSTER */}
+                <div className="lg:col-span-2 p-5 sm:p-6 rounded-[28px] glass-panel text-slate-900 space-y-4">
+                  {/* Top Header: Announced Event Name, Track Pill & Action Controls */}
+                  {/* Top Header: Announced Event Name, Track Pill & Action Controls */}
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 pb-5 border-b border-slate-200/60">
+                    <div className="space-y-3 min-w-0 flex-1">
+                      {currentChartEvent ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="px-2.5 py-1 rounded-full text-[9px] sm:text-[10px] font-mono uppercase font-black tracking-wider bg-indigo-500/15 text-indigo-700 border border-indigo-500/30 shadow-sm">
+                            {CATEGORY_LABELS[currentChartEvent.category]?.label || currentChartEvent.category}
+                          </span>
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 shadow-sm">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            <span className="text-[9px] sm:text-[10px] font-mono font-black text-emerald-800 uppercase tracking-tighter">Live Event</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 shadow-sm">
+                            <Users className="w-3 h-3" />
+                            <span className="text-[9px] sm:text-[10px] font-mono font-black uppercase tracking-tighter">
+                              Cap: {confirmedSeatsCount}/{currentChartEvent.capacity}
+                            </span>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div className="space-y-1">
+                        <h2 className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-900 tracking-tight leading-[1.15]">
+                          {currentChartEvent ? currentChartEvent.title : 'No Live Event Announced Yet'}
+                        </h2>
+                        <p className="text-[11px] sm:text-xs lg:text-[13px] text-slate-600 font-semibold leading-relaxed flex flex-wrap items-center gap-x-2 gap-y-1">
+                          {currentChartEvent ? (
+                            <>
+                              <span className="opacity-80">Registration analytics & roster</span>
+                              <span className="hidden sm:inline w-1 h-1 rounded-full bg-slate-300" />
+                              <span className="flex items-center gap-1 bg-white/60 px-2 py-0.5 rounded-lg border border-slate-200/50 shadow-xs">
+                                <strong className="text-slate-900 font-black">{totalEnrolledStudents}</strong>
+                                <span className="opacity-70">Students enrolled</span>
+                              </span>
+                              <span className="text-[10px] sm:text-[11px] bg-indigo-500/10 text-indigo-700 px-2 py-0.5 rounded-lg border border-indigo-500/20 font-black">
+                                {confirmedSeatsCount} confirmed{waitlistedSeatsCount > 0 ? ` • ${waitlistedSeatsCount} WL` : ''}
+                              </span>
+                            </>
+                          ) : (
+                            'Publish an event to automatically chart live student enrollments.'
+                          )}
+                        </p>
+                      </div>
                     </div>
-                    <span className="text-[10px] font-extrabold px-3 py-1 rounded-full glass-badge text-cyan-800">
-                      320 Peak
-                    </span>
+
+                    {/* Right Controls: Event Switcher + View Toggles + Export */}
+                    <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 shrink-0 self-stretch lg:self-center">
+                      <div className="flex items-center gap-2 flex-1 md:flex-none">
+                        {activeEventsList.length > 1 && (
+                          <div className="relative flex-1 md:flex-none">
+                            <select
+                              value={currentChartEvent?.id || ''}
+                              onChange={(e) => setSelectedChartEventId(e.target.value)}
+                              className="w-full md:w-[180px] pl-3 pr-8 py-2.5 rounded-xl bg-white border border-slate-200 text-[11px] font-black text-slate-800 shadow-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500/50 cursor-pointer appearance-none transition-all hover:border-slate-300"
+                            >
+                              {activeEventsList.map((ev) => (
+                                <option key={ev.id} value={ev.id}>
+                                  {ev.title}
+                                </option>
+                              ))}
+                            </select>
+                            <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          </div>
+                        )}
+                        
+                        <button
+                          onClick={handleExportExcelChart}
+                          disabled={!currentChartEvent || currentEventRegs.length === 0}
+                          className="px-4 py-2.5 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-[11px] uppercase tracking-wider shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40 transition-all active:scale-95 border border-white/20 shrink-0"
+                          title="Export roster to Excel"
+                        >
+                          <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-200" />
+                          <span>Export</span>
+                        </button>
+                      </div>
+
+                      {/* View mode toggle: Graph vs Metrics vs Excel */}
+                      <div className="flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200/60 shadow-inner overflow-x-auto no-scrollbar">
+                        {[
+                          { id: 'graph', label: 'Graph', icon: TrendingUp, color: 'indigo' },
+                          { id: 'ps', label: 'Metrics', icon: PieChart, color: 'purple' },
+                          { id: 'excel', label: 'Excel', icon: FileSpreadsheet, color: 'emerald' }
+                        ].map((mode) => (
+                          <button
+                            key={mode.id}
+                            onClick={() => setChartViewMode(mode.id as any)}
+                            className={`px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
+                              chartViewMode === mode.id
+                                ? mode.id === 'graph' ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-black/5'
+                                  : mode.id === 'ps' ? 'bg-white text-purple-700 shadow-sm ring-1 ring-black/5'
+                                  : 'bg-white text-emerald-800 shadow-sm ring-1 ring-black/5'
+                                : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                          >
+                            <mode.icon className={`w-3.5 h-3.5 ${
+                              chartViewMode === mode.id 
+                                ? mode.id === 'graph' ? 'text-indigo-600'
+                                  : mode.id === 'ps' ? 'text-purple-600'
+                                  : 'text-emerald-600'
+                                : 'text-slate-400'
+                            }`} />
+                            <span>{mode.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Smooth Extruded Vector SVG Curve */}
-                  <div className="w-full h-56 relative flex items-end pt-4">
-                    <svg className="w-full h-full overflow-visible" viewBox="0 0 500 150" preserveAspectRatio="none">
-                      <defs>
-                        <linearGradient id="chartGlowGlass" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.45" />
-                          <stop offset="100%" stopColor="#a855f7" stopOpacity="0.0" />
-                        </linearGradient>
-                        <filter id="glow3dGlass">
-                          <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#38bdf8" floodOpacity="0.8" />
-                        </filter>
-                      </defs>
+                  {/* Body Content based on chartViewMode */}
+                  {chartViewMode === 'graph' ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-xs font-mono font-bold text-slate-500">
+                        <span className="flex items-center gap-1.5">
+                          <Activity className="w-3.5 h-3.5 text-cyan-600" />
+                          <span>Student Enrollment Velocity vs Time</span>
+                        </span>
+                        <span className="text-[10px] font-extrabold px-3 py-1 rounded-full glass-badge text-cyan-800 flex items-center gap-1">
+                          <Users className="w-3 h-3 text-cyan-600" />
+                          <span>{totalEnrolledStudents} Enrolled • Peak {timelineData.peakCount}</span>
+                        </span>
+                      </div>
 
-                      {/* Area Fill */}
-                      <path
-                        d="M0,130 Q80,130 140,125 T250,110 T320,30 T400,20 T480,70 L500,80 L500,150 L0,150 Z"
-                        fill="url(#chartGlowGlass)"
-                      />
+                      {/* Smooth Vector SVG Curve Computed from Real Registered Timestamps */}
+                      <div className="w-full h-52 relative flex items-end pt-4">
+                        <svg className="w-full h-full overflow-visible" viewBox="0 0 500 150" preserveAspectRatio="none">
+                          <defs>
+                            <linearGradient id="chartGlowGlass" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#0284c7" stopOpacity="0.45" />
+                              <stop offset="100%" stopColor="#6366f1" stopOpacity="0.0" />
+                            </linearGradient>
+                            <filter id="glow3dGlass">
+                              <feDropShadow dx="0" dy="3" stdDeviation="3" floodColor="#0284c7" floodOpacity="0.6" />
+                            </filter>
+                          </defs>
 
-                      {/* Extruded 3D Stroke Line */}
-                      <path
-                        d="M0,130 Q80,130 140,125 T250,110 T320,30 T400,20 T480,70 L500,80"
-                        fill="none"
-                        stroke="#38bdf8"
-                        strokeWidth="4"
-                        strokeLinecap="round"
-                        filter="url(#glow3dGlass)"
-                      />
+                          {/* Horizontal Gridlines */}
+                          <line x1="0" y1="30" x2="500" y2="30" stroke="rgba(0,0,0,0.06)" strokeDasharray="3,3" />
+                          <line x1="0" y1="70" x2="500" y2="70" stroke="rgba(0,0,0,0.06)" strokeDasharray="3,3" />
+                          <line x1="0" y1="110" x2="500" y2="110" stroke="rgba(0,0,0,0.06)" strokeDasharray="3,3" />
 
-                      {/* Horizontal Gridlines */}
-                      <line x1="0" y1="30" x2="500" y2="30" stroke="rgba(255,255,255,0.1)" strokeDasharray="3,3" />
-                      <line x1="0" y1="70" x2="500" y2="70" stroke="rgba(255,255,255,0.1)" strokeDasharray="3,3" />
-                      <line x1="0" y1="110" x2="500" y2="110" stroke="rgba(255,255,255,0.1)" strokeDasharray="3,3" />
-                    </svg>
+                          {/* Area Fill */}
+                          <path
+                            d={timelineData.areaPath}
+                            fill="url(#chartGlowGlass)"
+                          />
 
-                    {/* Chart X-Axis Labels */}
-                    <div className="absolute bottom-0 left-0 right-0 flex justify-between text-[10px] font-bold text-slate-600 pt-2 border-t border-white/10">
-                      <span>14h</span>
-                      <span>17h</span>
-                      <span>20h</span>
-                      <span>23h</span>
-                      <span>02h</span>
-                      <span>05h</span>
-                      <span>08h</span>
-                      <span>11h</span>
+                          {/* Extruded 3D Stroke Line */}
+                          <path
+                            d={timelineData.strokePath}
+                            fill="none"
+                            stroke="#0284c7"
+                            strokeWidth="3.5"
+                            strokeLinecap="round"
+                            filter="url(#glow3dGlass)"
+                          />
+
+                          {/* Real Data Points Nodes with Hover Tooltips */}
+                          {timelineData.pts.map((p, idx) => (
+                            <g key={idx} className="group">
+                              <circle
+                                cx={p.x}
+                                cy={p.y}
+                                r="4.5"
+                                fill="#ffffff"
+                                stroke="#0284c7"
+                                strokeWidth="2.5"
+                                className="transition-transform group-hover:scale-150 cursor-pointer shadow-md"
+                              />
+                              <title>{`${p.label}: ${p.count} Enrolled Students`}</title>
+                            </g>
+                          ))}
+                        </svg>
+
+                        {/* Chart X-Axis Labels (Actual Registration Timestamps) */}
+                        <div className="absolute bottom-0 left-0 right-0 flex justify-between text-[10px] font-mono font-bold text-slate-500 pt-2 border-t border-slate-200/80">
+                          {timelineData.pts.map((p, idx) => (
+                            <span key={idx} className="text-center truncate px-0.5">{p.label}</span>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  ) : chartViewMode === 'ps' ? (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between text-[10px] sm:text-xs font-mono font-bold text-slate-500">
+                        <span className="flex items-center gap-1.5">
+                          <PieChart className="w-3.5 h-3.5 text-purple-600" />
+                          <span>Students vs Problem Statement Reading</span>
+                        </span>
+                        <div className="flex gap-4">
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]" />
+                            <span>Students</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.5)]" />
+                            <span>Candidates</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4 h-52 overflow-y-auto pr-2 custom-scrollbar">
+                        {psStats.entries.length === 0 ? (
+                          <div className="py-12 text-center text-xs text-slate-400 font-medium">No problem statement data available yet.</div>
+                        ) : (
+                          psStats.entries.map((entry, idx) => {
+                            const studentWidth = (entry.students / psStats.maxVal) * 100;
+                            const candidateWidth = (entry.candidates / psStats.maxVal) * 100;
+                            return (
+                              <div key={idx} className="space-y-1.5">
+                                <div className="flex justify-between items-center text-[10px] font-black text-slate-700 uppercase tracking-tighter">
+                                  <span className="truncate max-w-[200px]">{idx + 1}. {entry.label}</span>
+                                  <span className="text-slate-400 font-mono">
+                                    {entry.students} S / {entry.candidates} C
+                                  </span>
+                                </div>
+                                <div className="space-y-1">
+                                  {/* Students Bar (Darker Indigo) */}
+                                  <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden border border-white shadow-inner relative">
+                                    <motion.div
+                                      initial={{ width: 0 }}
+                                      animate={{ width: `${studentWidth}%` }}
+                                      transition={{ duration: 1, ease: 'easeOut' }}
+                                      className="h-full bg-gradient-to-r from-indigo-600 to-indigo-400 rounded-full shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]"
+                                    />
+                                  </div>
+                                  {/* Candidates Bar (Lighter Cyan) */}
+                                  <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden border border-white shadow-inner relative opacity-90">
+                                    <motion.div
+                                      initial={{ width: 0 }}
+                                      animate={{ width: `${candidateWidth}%` }}
+                                      transition={{ duration: 1.2, ease: 'easeOut' }}
+                                      className="h-full bg-gradient-to-r from-cyan-500 to-cyan-300 rounded-full"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] font-mono font-bold text-slate-400">
+                        <span>Reading based on {currentEventRegs.length} joined candidates</span>
+                        <span className="text-indigo-600">Total Enrolled: {totalEnrolledStudents}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Body: Mode 2 - Actual Enrolled Student List in Excel Chart Format */
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                          <span className="text-xs font-black uppercase tracking-wider text-slate-800 font-mono">
+                            Excel Roster • {currentEventRegs.length} Registrations ({totalEnrolledStudents} Students)
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-mono text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full font-bold border border-emerald-200">
+                          Real Database Roster
+                        </span>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 overflow-hidden bg-white shadow-inner max-h-56 overflow-y-auto">
+                        {currentEventRegs.length === 0 ? (
+                          <div className="py-12 text-center text-xs text-slate-500 font-medium">
+                            No students have registered yet for <strong className="text-slate-800">{currentChartEvent?.title || 'this event'}</strong>.
+                          </div>
+                        ) : (
+                          <table className="w-full text-left text-xs border-collapse">
+                            <thead className="bg-[#f1f5f9] text-slate-700 font-mono text-[10px] uppercase font-bold sticky top-0 border-b border-slate-200 z-10">
+                              <tr>
+                                <th className="py-2 px-3 border-r border-slate-200">#</th>
+                                <th className="py-2 px-3 border-r border-slate-200">Roll / Reg No</th>
+                                <th className="py-2 px-3 border-r border-slate-200">Candidate / Leader</th>
+                                <th className="py-2 px-3 border-r border-slate-200">Type</th>
+                                <th className="py-2 px-3 border-r border-slate-200">Team / Roster</th>
+                                <th className="py-2 px-3 border-r border-slate-200">Branch</th>
+                                <th className="py-2 px-3 border-r border-slate-200">Timestamp</th>
+                                <th className="py-2 px-3">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {currentEventRegs.map((r, idx) => {
+                                const isTeam = r.registration_type === 'team';
+                                const memberCount = isTeam && r.team_members ? r.team_members.length : 1;
+                                return (
+                                  <tr key={r.id || idx} className="hover:bg-slate-50/80 transition-colors">
+                                    <td className="py-1.5 px-3 font-mono font-bold text-slate-400 border-r border-slate-100">{idx + 1}</td>
+                                    <td className="py-1.5 px-3 font-mono font-bold text-slate-800 border-r border-slate-100">{r.registration_no || '-'}</td>
+                                    <td className="py-1.5 px-3 font-bold text-slate-900 border-r border-slate-100 truncate max-w-[140px]">{r.name}</td>
+                                    <td className="py-1.5 px-3 border-r border-slate-100">
+                                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-black uppercase ${isTeam ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                                        {r.registration_type}
+                                      </span>
+                                    </td>
+                                    <td className="py-1.5 px-3 font-medium text-slate-700 border-r border-slate-100 truncate max-w-[150px]">
+                                      {isTeam ? `${r.team_name || 'Team'} (${memberCount} mem)` : '-'}
+                                    </td>
+                                    <td className="py-1.5 px-3 text-slate-600 border-r border-slate-100 truncate max-w-[120px]">{r.branch || '-'}</td>
+                                    <td className="py-1.5 px-3 font-mono text-[10px] text-slate-500 border-r border-slate-100 whitespace-nowrap">
+                                      {r.registered_at ? new Date(r.registered_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
+                                    </td>
+                                    <td className="py-1.5 px-3">
+                                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase ${r.status === 'confirmed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+                                        {r.status || 'confirmed'}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {/* 2. Domain Breakdown Donut Chart (1/3 width) */}
-                <div className="p-6 rounded-[28px] glass-panel text-slate-900 space-y-4 flex flex-col justify-between">
-                  <div>
-                    <h2 className="text-sm font-black text-slate-900 tracking-tight">Domain Breakdown (24h)</h2>
-                    <p className="text-xs text-slate-700">Applicant distribution across club domains</p>
+                {/* 2. Problem Statement Distribution (Real Reading Donut Chart) */}
+                <div className="p-5 sm:p-6 rounded-[28px] glass-panel text-slate-900 space-y-4 flex flex-col">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h2 className="text-sm sm:text-base font-black text-slate-900 tracking-tight flex items-center gap-2">
+                        <PieChart className="w-4 h-4 text-purple-600" />
+                        <span>PS Enrollment Reading</span>
+                      </h2>
+                      <p className="text-[11px] text-slate-600 font-medium leading-tight">Real student interest distribution by topic</p>
+                    </div>
+                    {psDonutSegments.length > 0 && (
+                      <span className="text-[10px] font-mono font-black px-2 py-1 rounded-lg bg-purple-100 text-purple-700 border border-purple-200">
+                        {psDonutSegments.length} Tracks
+                      </span>
+                    )}
                   </div>
 
-                  {/* 3D Volumetric Glass Donut Ring */}
-                  <div className="relative w-44 h-44 mx-auto my-2 flex items-center justify-center">
-                    <svg className="w-full h-full -rotate-90 drop-shadow-[0_0_15px_rgba(168,85,247,0.4)]" viewBox="0 0 36 36">
-                      <path
-                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                        fill="none"
-                        stroke="rgba(255, 255, 255, 0.1)"
-                        strokeWidth="4.5"
-                      />
-                      <path
-                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                        fill="none"
-                        stroke="#38bdf8"
-                        strokeWidth="4.5"
-                        strokeDasharray="65, 100"
-                        strokeLinecap="round"
-                      />
-                      <path
-                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                        fill="none"
-                        stroke="#f59e0b"
-                        strokeWidth="4.5"
-                        strokeDasharray="20, 100"
-                        strokeDashoffset="-65"
-                        strokeLinecap="round"
-                      />
-                      <path
-                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                        fill="none"
-                        stroke="#a855f7"
-                        strokeWidth="4.5"
-                        strokeDasharray="15, 100"
-                        strokeDashoffset="-85"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                    
-                    {/* Central Glass Sphere Backdrop */}
-                    <div className="absolute w-20 h-20 rounded-full glass-card flex flex-col items-center justify-center text-center shadow-[0_0_20px_rgba(255,255,255,0.2)] border border-white/40">
-                      <span className="text-[10px] font-extrabold text-slate-700 uppercase block">TOTAL</span>
-                      <span className="text-2xl font-black text-slate-900 leading-none">{applications.length + approvedMembers.length}</span>
+                  {/* 3D Volumetric Glass Donut Ring computed from real PS data */}
+                  <div className="flex-1 flex flex-col items-center justify-center py-2 sm:py-4">
+                    <div className="relative w-44 h-44 sm:w-48 sm:h-48 flex items-center justify-center">
+                      <svg className="w-full h-full -rotate-90 drop-shadow-[0_0_12px_rgba(168,85,247,0.25)]" viewBox="0 0 36 36">
+                        <circle
+                          cx="18"
+                          cy="18"
+                          r="15.9155"
+                          fill="none"
+                          stroke="rgba(0, 0, 0, 0.04)"
+                          strokeWidth="4.2"
+                        />
+                        {psDonutSegments.length === 0 ? (
+                          <circle
+                            cx="18"
+                            cy="18"
+                            r="15.9155"
+                            fill="none"
+                            stroke="#f1f5f9"
+                            strokeWidth="4.2"
+                            strokeDasharray="100, 100"
+                          />
+                        ) : (
+                          psDonutSegments.map((s, idx) => (
+                            <motion.circle
+                              key={`donut-seg-${idx}`}
+                              initial={{ pathLength: 0 }}
+                              animate={{ pathLength: 1 }}
+                              transition={{ duration: 1, delay: idx * 0.1, ease: "easeOut" }}
+                              cx="18"
+                              cy="18"
+                              r="15.9155"
+                              fill="none"
+                              stroke={s.color}
+                              strokeWidth="4.2"
+                              strokeDasharray={s.dashArray}
+                              strokeDashoffset={s.dashOffset}
+                              strokeLinecap="round"
+                              className="transition-all duration-500"
+                            />
+                          ))
+                        )}
+                      </svg>
+                      
+                      {/* Central High-Gloss Analytics Backdrop */}
+                      <div className="absolute w-24 h-24 rounded-full glass-card flex flex-col items-center justify-center text-center shadow-[0_8px_20px_rgba(0,0,0,0.06)] border border-white/60">
+                        <span className="text-[9px] font-black text-slate-400 uppercase block tracking-tighter mb-0.5">TOTAL</span>
+                        <span className="text-3xl font-black text-slate-900 leading-none tracking-tight">
+                          {currentEventRegs.length}
+                        </span>
+                        <span className="text-[8px] font-bold text-indigo-600 mt-1">Registered</span>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Donut Legend */}
-                  <div className="space-y-2 text-xs font-bold pt-2 border-t border-white/10">
-                    <div className="flex items-center justify-between text-slate-800">
-                      <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full bg-[#38bdf8] shadow-[0_0_8px_#38bdf8]" />
-                        <span>Tech / Coding</span>
-                      </div>
-                      <span className="font-extrabold text-slate-900">65%</span>
-                    </div>
-                    <div className="flex items-center justify-between text-slate-800">
-                      <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full bg-[#f59e0b] shadow-[0_0_8px_#f59e0b]" />
-                        <span>AI & Robotics</span>
-                      </div>
-                      <span className="font-extrabold text-slate-900">20%</span>
-                    </div>
-                    <div className="flex items-center justify-between text-slate-800">
-                      <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full bg-[#a855f7] shadow-[0_0_8px_#a855f7]" />
-                        <span>Events & Media</span>
-                      </div>
-                      <span className="font-extrabold text-slate-900">15%</span>
-                    </div>
+                  {/* Dynamic PS Legend with Real Percents */}
+                  <div className="space-y-1.5 text-[10px] sm:text-xs font-bold pt-3 border-t border-slate-100 max-h-[160px] overflow-y-auto pr-2 custom-scrollbar">
+                    {psDonutSegments.length === 0 ? (
+                      <div className="text-center text-slate-400 py-6 italic text-[11px]">Waiting for event registration data...</div>
+                    ) : (
+                      psDonutSegments.map((s, idx) => (
+                        <div key={`legend-${idx}`} className="flex items-center justify-between text-slate-800 hover:bg-slate-50 p-1.5 rounded-xl transition-all border border-transparent hover:border-slate-100 group">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: s.color, boxShadow: `0 0 8px ${s.color}60` }} />
+                            <span className="truncate pr-1 group-hover:text-slate-950 transition-colors">{s.label}</span>
+                          </div>
+                          <div className="flex items-center gap-2 ml-2 shrink-0">
+                            <span className="text-slate-400 font-mono text-[10px]">{s.count}</span>
+                            <span className="font-black text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded-md min-w-[38px] text-center">{s.percent}%</span>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>
@@ -1381,10 +1941,11 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
                   </div>
                   <button
                     onClick={() => setActiveTab('applications')}
-                    className="px-4 py-2 rounded-2xl glass-button-active text-slate-900 text-xs font-extrabold transition-all cursor-pointer flex items-center gap-2 shadow-lg"
+                    className="px-4 py-2 rounded-2xl bg-white/95 hover:bg-white text-slate-900 text-xs font-black transition-all cursor-pointer flex items-center gap-2 shadow-[0_6px_16px_rgba(165,180,210,0.4),inset_1px_1px_2px_rgba(255,255,255,0.9)] hover:scale-105 active:scale-95 border border-slate-200/80"
+                    title="Open pending student applications approval workspace"
                   >
                     <span>View All Applications</span>
-                    <ArrowRight className="w-4 h-4" />
+                    <ArrowRight className="w-4 h-4 text-indigo-600" />
                   </button>
                 </div>
 
@@ -1478,18 +2039,329 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
             </div>
           )}
 
-          {/* TAB 2: CANDIDATE APPLICATION & WHATSAPP CHAT COMMUNICATION WORKSPACE */}
+          {/* TAB 2: PENDING STUDENT CANDIDATE APPLICATIONS REVIEW WORKSPACE */}
           {activeTab === 'applications' && (
-            <div className="space-y-6">
-              <DirectChatWorkspace
-                currentUser={currentUser}
-                studentMembers={approvedMembers}
-                coreCouncilList={coreCouncilList}
-                pendingApps={applications}
-                onApproveStudent={handleApprove}
-                onDeclineStudent={handleDecline}
-                isCoreUser={true}
-              />
+            <div className="space-y-4 md:space-y-6">
+              {/* Header Bar */}
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 sm:p-6 rounded-[24px] sm:rounded-[28px] glass-panel border border-white/80 shadow-[0_10px_25px_rgba(165,180,210,0.25)]">
+                <div className="space-y-2 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      onClick={() => setActiveTab('dashboard')}
+                      className="px-2.5 py-1.5 rounded-lg bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 border border-slate-200/80 font-black text-[10px] sm:text-xs flex items-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer shrink-0"
+                      title="Return to Sic Dashboard"
+                    >
+                      <ArrowLeft className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-slate-700" />
+                      <span>Back to Dashboard</span>
+                    </button>
+                    <span className="px-2.5 py-1 rounded-full text-[9px] sm:text-[10px] font-mono font-black uppercase tracking-wider bg-amber-500/15 text-amber-900 border border-amber-400/40 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
+                      <span className="hidden xs:inline">Awaiting Coordinator Review</span>
+                      <span className="xs:hidden">Pending Review</span>
+                    </span>
+                    <span className="text-[10px] sm:text-xs font-mono font-bold text-slate-500">
+                      Total: <strong className="text-slate-900 font-black">{applications.length}</strong>
+                    </span>
+                  </div>
+
+                  <h2 className="text-lg sm:text-xl lg:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                    <Clock className="w-5 h-5 lg:w-6 lg:h-6 text-amber-500" />
+                    <span>Pending Student Applications ({filteredApps.length})</span>
+                  </h2>
+                  <p className="text-[11px] sm:text-xs font-medium text-slate-600 max-w-2xl">
+                    Review join requests submitted by students. Accept candidates to admit them directly into the official SIC member roster.
+                  </p>
+                </div>
+
+                {/* Right Action Controls: View Toggle, Export, Accept All */}
+                <div className="flex items-center gap-2 flex-wrap shrink-0">
+                  {/* View Mode Toggle */}
+                  <div className="flex items-center p-0.5 bg-slate-200/80 rounded-lg sm:rounded-xl border border-white">
+                    <button
+                      onClick={() => setIsExcelView(false)}
+                      className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-black transition-all cursor-pointer flex items-center gap-1 ${
+                        !isExcelView ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Users className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                      <span>Cards</span>
+                    </button>
+                    <button
+                      onClick={() => setIsExcelView(true)}
+                      className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-black transition-all cursor-pointer flex items-center gap-1 ${
+                        isExcelView ? 'bg-white text-emerald-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <FileSpreadsheet className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600" />
+                      <span className="hidden xs:inline">Excel View</span>
+                      <span className="xs:hidden">Excel</span>
+                    </button>
+                  </div>
+
+                  {/* Export Excel Button */}
+                  <button
+                    onClick={exportPendingApplicationsToExcel}
+                    disabled={applications.length === 0}
+                    className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg sm:rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-[10px] sm:text-xs uppercase tracking-wider shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-40 transition-all active:scale-95 border border-white/40"
+                    title="Export pending applicant roster to Excel"
+                  >
+                    <FileSpreadsheet className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-200" />
+                    <span className="hidden sm:inline">Export Excel</span>
+                    <span className="sm:hidden">Export</span>
+                  </button>
+
+                  {/* Accept All Pending Button */}
+                  {applications.length > 1 && (
+                    <button
+                      onClick={handleApproveAllPending}
+                      className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg sm:rounded-xl bg-gradient-to-tr from-emerald-500 via-teal-400 to-emerald-400 text-slate-950 font-black text-[10px] sm:text-xs uppercase tracking-wider shadow-[0_4px_14px_rgba(16,185,129,0.2)] flex items-center gap-1.5 cursor-pointer hover:scale-[1.02] active:scale-95 transition-all border border-white"
+                      title="Approve and admit all pending students at once"
+                    >
+                      <CheckCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-950" />
+                      <span>Accept All</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Search & Domain Filter Bar */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 p-3 sm:p-4 rounded-[20px] sm:rounded-2xl bg-white/80 border border-white shadow-sm">
+                <div className="relative flex-1">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search name, email, or reg no..."
+                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-white border border-slate-200 text-[11px] sm:text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 shadow-inner"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <Filter className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <select
+                    value={selectedDomainFilter}
+                    onChange={(e) => setSelectedDomainFilter(e.target.value)}
+                    className="flex-1 sm:flex-none px-2.5 py-2 rounded-xl bg-white border border-slate-200 text-[11px] sm:text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer shadow-xs"
+                  >
+                    {DOMAINS_LIST.map((dom) => (
+                      <option key={dom} value={dom}>
+                        {dom}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Pending Applications Content */}
+              {applications.length === 0 ? (
+                /* Empty state when 0 applications are pending */
+                <div className="p-8 sm:p-12 lg:p-16 text-center rounded-[28px] sm:rounded-[32px] bg-white/90 border-2 border-white shadow-[0_12px_32px_rgba(165,180,210,0.2)] space-y-3 sm:space-y-4 max-w-xl mx-auto">
+                  <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-inner border border-emerald-200">
+                    <CheckCircle className="w-7 h-7 sm:w-9 sm:h-9" />
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">All Candidate Applications Cleared!</h3>
+                    <p className="text-[11px] sm:text-xs text-slate-600 max-w-md mx-auto">
+                      There are currently zero pending student join requests awaiting decision. When new students submit their membership application, they will appear right here for your approval.
+                    </p>
+                  </div>
+                  <div className="pt-2">
+                    <button
+                      onClick={() => setActiveTab('dashboard')}
+                      className="px-4 py-2 sm:px-5 sm:py-2.5 rounded-xl sm:rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[11px] sm:text-xs uppercase tracking-wider shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer inline-flex items-center gap-2"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      <span>Back to Dashboard</span>
+                    </button>
+                  </div>
+                </div>
+              ) : filteredApps.length === 0 ? (
+                /* Empty state when search matches nothing */
+                <div className="p-12 text-center rounded-[28px] bg-white/90 border border-white shadow-sm space-y-3">
+                  <Search className="w-10 h-10 text-slate-400 mx-auto" />
+                  <p className="text-sm font-black text-slate-900">No Pending Applications Found</p>
+                  <p className="text-xs text-slate-600">No candidate matches &quot;{searchQuery}&quot; or the selected domain filter.</p>
+                  <button
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSelectedDomainFilter('All Domains');
+                    }}
+                    className="px-4 py-2 rounded-xl bg-slate-200 text-slate-800 text-xs font-bold hover:bg-slate-300 transition-colors cursor-pointer"
+                  >
+                    Clear Filters
+                  </button>
+                </div>
+              ) : isExcelView ? (
+                /* Excel View: Structured Spreadsheet Table with Quick Accept & Decline Actions */
+                <div className="rounded-[20px] sm:rounded-[28px] bg-white border border-slate-200 shadow-[0_10px_25px_rgba(165,180,210,0.2)] overflow-hidden">
+                  <div className="p-3 sm:p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600" />
+                      <span className="text-[10px] sm:text-xs font-mono font-black uppercase text-slate-800 truncate">
+                        Pending Roster ({filteredApps.length})
+                      </span>
+                    </div>
+                    <span className="text-[8px] sm:text-[10px] font-mono font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200 shrink-0">
+                      Approval Needed
+                    </span>
+                  </div>
+                  <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
+                    <table className="w-full text-left text-[10px] sm:text-xs border-collapse min-w-[700px]">
+                      <thead className="bg-[#f8fafc] text-slate-700 font-mono text-[9px] sm:text-[10px] uppercase font-bold border-b border-slate-200 sticky top-0">
+                        <tr>
+                          <th className="py-2 px-3 border-r border-slate-200 w-8">#</th>
+                          <th className="py-2 px-3 border-r border-slate-200 w-24">Reg / Roll</th>
+                          <th className="py-2 px-3 border-r border-slate-200">Name</th>
+                          <th className="py-2 px-3 border-r border-slate-200">Email</th>
+                          <th className="py-2 px-3 border-r border-slate-200 w-20">Domain</th>
+                          <th className="py-2 px-3 border-r border-slate-200 w-24">Branch</th>
+                          <th className="py-2 px-3 border-r border-slate-200 w-16">Applied</th>
+                          <th className="py-2 px-3 text-center w-28">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredApps.map((app, idx) => {
+                          const u = app.user;
+                          if (!u) return null;
+                          return (
+                            <tr key={app.id || idx} className="hover:bg-amber-50/30 transition-colors">
+                              <td className="py-1.5 px-3 font-mono font-bold text-slate-400 border-r border-slate-100">{idx + 1}</td>
+                              <td className="py-1.5 px-3 font-mono font-bold text-indigo-950 border-r border-slate-100">{u.registration_no || '-'}</td>
+                              <td className="py-1.5 px-3 font-black text-slate-900 border-r border-slate-100">
+                                <div className="flex items-center gap-1.5">
+                                  <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 text-white font-bold text-[8px] flex items-center justify-center shrink-0">
+                                    {u.avatar_url ? (
+                                      <img src={u.avatar_url} alt="" className="w-full h-full object-cover rounded-full" />
+                                    ) : (
+                                      u.first_name ? u.first_name[0] : 'S'
+                                    )}
+                                  </div>
+                                  <span className="truncate max-w-[120px]">{u.first_name} {u.last_name}</span>
+                                </div>
+                              </td>
+                              <td className="py-1.5 px-3 text-indigo-700 font-bold border-r border-slate-100 truncate max-w-[130px]">{u.email}</td>
+                              <td className="py-1.5 px-3 border-r border-slate-100">
+                                <span className="px-1.5 py-0.5 rounded-full text-[8px] font-mono font-black uppercase bg-purple-50 text-purple-900 border border-purple-100">
+                                  {u.domain || 'Tech'}
+                                </span>
+                              </td>
+                              <td className="py-1.5 px-3 text-slate-700 border-r border-slate-100 truncate max-w-[100px]">{u.branch || '-'}</td>
+                              <td className="py-1.5 px-3 text-slate-500 font-mono text-[9px] border-r border-slate-100 whitespace-nowrap">
+                                {app.created_at ? new Date(app.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '-'}
+                              </td>
+                              <td className="py-1.5 px-3 text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                  <button
+                                    onClick={() => handleApprove(u.id, `${u.first_name} ${u.last_name}`)}
+                                    className="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[9px] transition-all cursor-pointer flex items-center gap-0.5 shadow-xs"
+                                  >
+                                    <CheckCircle2 className="w-2.5 h-2.5" />
+                                    <span>Accept</span>
+                                  </button>
+                                  <button
+                                    onClick={() => handleDecline(u.id, `${u.first_name} ${u.last_name}`)}
+                                    className="p-1 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-600 transition-all cursor-pointer"
+                                  >
+                                    <UserX className="w-2.5 h-2.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                /* Card View: Rich Pending Student Profile Cards with Direct Accept/Decline Actions */
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">
+                  {filteredApps.map((app) => {
+                    const u = app.user;
+                    if (!u) return null;
+                    return (
+                      <div
+                        key={app.id}
+                        className="p-4 sm:p-6 rounded-[24px] sm:rounded-[28px] bg-white/95 border-2 border-white shadow-[0_8px_20px_rgba(165,180,210,0.25),-4px_-4px_15px_rgba(255,255,255,0.9)] space-y-3 sm:space-y-4 flex flex-col justify-between transition-all hover:-translate-y-1 hover:shadow-[0_12px_30px_rgba(165,180,210,0.4)]"
+                      >
+                        <div className="space-y-3">
+                          {/* Card Header Status Pill & Date */}
+                          <div className="flex items-center justify-between">
+                            <span className="px-2.5 py-0.5 sm:px-3.5 sm:py-1 rounded-full text-[8px] sm:text-[10px] font-mono font-black uppercase bg-amber-100 text-amber-900 border border-amber-300 shadow-xs flex items-center gap-1">
+                              <span className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-amber-500 animate-ping" />
+                              Pending
+                            </span>
+                            <span className="text-[9px] sm:text-[10px] font-bold text-slate-500 bg-slate-100 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full border border-slate-200">
+                              {app.created_at ? new Date(app.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : 'Recent'}
+                            </span>
+                          </div>
+
+                          {/* Candidate Avatar & Name */}
+                          <div className="flex items-center gap-3 pt-0.5">
+                            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 text-white font-black text-sm sm:text-base flex items-center justify-center shrink-0 shadow-[0_4px_12px_rgba(99,102,241,0.25)] border border-white overflow-hidden">
+                              {u.avatar_url ? (
+                                <img src={u.avatar_url} alt="Candidate" className="w-full h-full object-cover" />
+                              ) : (
+                                <span>{u.first_name ? u.first_name[0] : 'S'}{u.last_name ? u.last_name[0] : ''}</span>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <h3 className="text-sm sm:text-base font-black text-slate-900 truncate tracking-tight leading-tight">
+                                {u.first_name} {u.last_name}
+                              </h3>
+                              <p className="text-[10px] sm:text-xs font-bold text-indigo-700 truncate">{u.email}</p>
+                            </div>
+                          </div>
+
+                          {/* Candidate Academic Details Grid */}
+                          <div className="p-3 sm:p-3.5 rounded-xl sm:rounded-2xl bg-gradient-to-br from-[#f8fafc] to-[#f1f5f9] border border-slate-100 space-y-1.5 text-[10px] sm:text-[11px] font-bold shadow-inner">
+                            <div className="flex justify-between items-center bg-white px-2.5 py-1 rounded-lg border border-slate-100/50">
+                              <span className="text-slate-400 font-mono text-[8px] sm:text-[9px] uppercase tracking-tighter">Reg No</span>
+                              <span className="text-indigo-950 font-black font-mono">{u.registration_no || 'N/A'}</span>
+                            </div>
+                            <div className="flex justify-between items-center bg-white px-2.5 py-1 rounded-lg border border-slate-100/50">
+                              <span className="text-slate-400 font-mono text-[8px] sm:text-[9px] uppercase tracking-tighter">Domain</span>
+                              <span className="text-purple-900 font-extrabold">{u.domain || 'Tech'}</span>
+                            </div>
+                            {u.branch && (
+                              <div className="flex justify-between items-center bg-white px-2.5 py-1 rounded-lg border border-slate-100/50">
+                                <span className="text-slate-400 font-mono text-[8px] sm:text-[9px] uppercase tracking-tighter">Branch</span>
+                                <span className="text-slate-900 font-extrabold truncate max-w-[120px]">{u.branch}</span>
+                              </div>
+                            )}
+                            {u.phone_no && (
+                              <div className="flex justify-between items-center bg-white px-2.5 py-1 rounded-lg border border-slate-100/50">
+                                <span className="text-slate-400 font-mono text-[8px] sm:text-[9px] uppercase tracking-tighter">Mobile</span>
+                                <span className="text-emerald-700 font-mono font-black">{u.phone_no}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Decisions Action Buttons: Accept / Decline */}
+                        <div className="flex items-center gap-2 pt-2.5 border-t border-slate-100">
+                          <button
+                            onClick={() => handleApprove(u.id, `${u.first_name} ${u.last_name}`)}
+                            className="flex-1 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-emerald-500 via-teal-400 to-emerald-400 text-slate-950 font-black text-[10px] sm:text-xs uppercase tracking-wider shadow-sm hover:scale-[1.02] active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 border border-white"
+                            title="Accept this student into official club roster"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-950" />
+                            <span>Accept</span>
+                          </button>
+                          <button
+                            onClick={() => handleDecline(u.id, `${u.first_name} ${u.last_name}`)}
+                            className="py-2 sm:py-2.5 px-3 sm:px-4 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-rose-500 to-pink-500 text-white font-black text-[10px] sm:text-xs shadow-sm hover:scale-[1.02] active:scale-95 transition-all border border-white flex items-center justify-center shrink-0"
+                            title="Decline Candidate Application"
+                          >
+                            <UserX className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
@@ -2151,45 +3023,43 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
       )}
 
       {/* 3D CLAYMORPHISM FLOATING BOTTOM NAVIGATION BAR (MATCHING REFERENCE IMAGE) */}
-      <div className="md:hidden fixed bottom-3 left-3 right-3 z-40 clay-pill bg-[#eef2f9]/95 backdrop-blur-2xl border border-white p-2.5 flex items-center justify-around shadow-[0_15px_35px_rgba(150,165,205,0.45)]">
+      <div className="md:hidden fixed bottom-2.5 left-3 right-3 z-40 clay-pill bg-[#eef2f9]/95 backdrop-blur-2xl border border-white py-1 px-2 flex items-center justify-around shadow-[0_12px_28px_rgba(150,165,205,0.38)] max-w-md mx-auto">
         <button
           onClick={() => setActiveTab('dashboard')}
-          className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-2xl transition-all cursor-pointer ${
+          className={`flex flex-col items-center gap-0.5 px-2.5 py-0.5 rounded-xl transition-all cursor-pointer ${
             activeTab === 'dashboard' 
-              ? 'bg-[#dfe6f5] text-cyan-600 font-black shadow-[inset_2px_2px_5px_rgba(150,165,205,0.5),inset_-2px_-2px_5px_rgba(255,255,255,0.8)]' 
+              ? 'bg-[#dfe6f5] text-cyan-600 font-black shadow-[inset_2px_2px_4px_rgba(150,165,205,0.5),inset_-2px_-2px_4px_rgba(255,255,255,0.8)]' 
               : 'text-slate-600 font-bold hover:text-slate-900'
           }`}
         >
-          <Activity className="w-5 h-5 text-cyan-500" />
-          <span className="text-[10px]">Dashboard</span>
+          <Activity className="w-4 h-4 text-cyan-500" />
+          <span className="text-[9px] font-bold leading-none">Dashboard</span>
         </button>
-
-
 
         <button
           onClick={() => setActiveTab('members')}
-          className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-2xl transition-all cursor-pointer ${
+          className={`flex flex-col items-center gap-0.5 px-2.5 py-0.5 rounded-xl transition-all cursor-pointer ${
             activeTab === 'members' 
-              ? 'bg-[#d1fae5] text-emerald-800 font-black shadow-[inset_2px_2px_5px_rgba(16,185,129,0.3),inset_-2px_-2px_5px_rgba(255,255,255,0.8)]' 
+              ? 'bg-[#d1fae5] text-emerald-800 font-black shadow-[inset_2px_2px_4px_rgba(16,185,129,0.3),inset_-2px_-2px_4px_rgba(255,255,255,0.8)]' 
               : 'text-slate-600 font-bold hover:text-slate-900'
           }`}
         >
-          <Users className="w-5 h-5 text-emerald-600" />
-          <span className="text-[10px]">Members</span>
+          <Users className="w-4 h-4 text-emerald-600" />
+          <span className="text-[9px] font-bold leading-none">Members</span>
         </button>
 
         <button
           onClick={() => setActiveTab('announcements')}
-          className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-2xl transition-all cursor-pointer relative ${
+          className={`flex flex-col items-center gap-0.5 px-2.5 py-0.5 rounded-xl transition-all cursor-pointer relative ${
             activeTab === 'announcements' 
-              ? 'bg-[#ede9fe] text-purple-800 font-black shadow-[inset_2px_2px_5px_rgba(139,92,246,0.3),inset_-2px_-2px_5px_rgba(255,255,255,0.8)]' 
+              ? 'bg-[#ede9fe] text-purple-800 font-black shadow-[inset_2px_2px_4px_rgba(139,92,246,0.3),inset_-2px_-2px_4px_rgba(255,255,255,0.8)]' 
               : 'text-slate-600 font-bold hover:text-slate-900'
           }`}
         >
-          <Bell className="w-5 h-5 text-purple-600" />
-          <span className="text-[10px]">Notices</span>
+          <Bell className="w-4 h-4 text-purple-600" />
+          <span className="text-[9px] font-bold leading-none">Notices</span>
           {announcements.length > 0 && (
-            <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center shadow-md">
+            <span className="absolute -top-0.5 right-0.5 w-3.5 h-3.5 rounded-full bg-rose-500 text-white text-[8px] font-black flex items-center justify-center shadow-sm">
               {announcements.length}
             </span>
           )}
@@ -2197,26 +3067,26 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
 
         <button
           onClick={() => setActiveTab('council')}
-          className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-2xl transition-all cursor-pointer ${
+          className={`flex flex-col items-center gap-0.5 px-2.5 py-0.5 rounded-xl transition-all cursor-pointer ${
             activeTab === 'council' 
-              ? 'bg-[#e0f2fe] text-cyan-800 font-black shadow-[inset_2px_2px_5px_rgba(6,182,212,0.3),inset_-2px_-2px_5px_rgba(255,255,255,0.8)]' 
+              ? 'bg-[#e0f2fe] text-cyan-800 font-black shadow-[inset_2px_2px_4px_rgba(6,182,212,0.3),inset_-2px_-2px_4px_rgba(255,255,255,0.8)]' 
               : 'text-slate-600 font-bold hover:text-slate-900'
           }`}
         >
-          <Crown className="w-5 h-5 text-cyan-600" />
-          <span className="text-[10px]">Core</span>
+          <Crown className="w-4 h-4 text-cyan-600" />
+          <span className="text-[9px] font-bold leading-none">Core</span>
         </button>
 
         <button
           onClick={() => setActiveTab('chat')}
-          className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-2xl transition-all cursor-pointer ${
+          className={`flex flex-col items-center gap-0.5 px-2.5 py-0.5 rounded-xl transition-all cursor-pointer ${
             activeTab === 'chat' 
-              ? 'bg-[#d1fae5] text-emerald-800 font-black shadow-[inset_2px_2px_5px_rgba(16,185,129,0.3),inset_-2px_-2px_5px_rgba(255,255,255,0.8)]' 
+              ? 'bg-[#d1fae5] text-emerald-800 font-black shadow-[inset_2px_2px_4px_rgba(16,185,129,0.3),inset_-2px_-2px_4px_rgba(255,255,255,0.8)]' 
               : 'text-slate-600 font-bold hover:text-slate-900'
           }`}
         >
-          <MessagesSquare className="w-5 h-5 text-emerald-600" />
-          <span className="text-[10px]">Chat</span>
+          <MessagesSquare className="w-4 h-4 text-emerald-600" />
+          <span className="text-[9px] font-bold leading-none">Chat</span>
         </button>
       </div>
     </div>

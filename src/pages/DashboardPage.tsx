@@ -21,6 +21,7 @@ import {
 } from '../lib/projectStore';
 import {
   getEventRegistrations,
+  getStoredEventRegistrations,
   getAllAnnouncedEvents,
 } from '../lib/eventStorage';
 import { markMessagesAsDelivered, markUserPresence } from '../lib/chatStore';
@@ -726,7 +727,7 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
                   <span>Event</span>
                 </div>
                 <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-sky-100 text-sky-800">
-                  {getEventRegistrations().filter(r => r.email.toLowerCase() === currentUser.email.toLowerCase() || r.user_id === currentUser.id).length}
+                  {getStoredEventRegistrations().filter((r) => r.email.toLowerCase() === currentUser.email.toLowerCase() || r.user_id === currentUser.id).length}
                 </span>
               </button>
 
@@ -1078,8 +1079,8 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
               </div>
 
               {(() => {
-                const userRegs = getEventRegistrations().filter(
-                  r => r.email.toLowerCase() === currentUser.email.toLowerCase() || r.user_id === currentUser.id
+                const userRegs = getStoredEventRegistrations().filter(
+                  (r) => r.email.toLowerCase() === currentUser.email.toLowerCase() || r.user_id === currentUser.id
                 );
                 const allEvents = getAllAnnouncedEvents();
 
@@ -1536,8 +1537,8 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
 
               <div className="space-y-3">
                 {(() => {
-                  const userRegs = getEventRegistrations().filter(
-                    r => r.email.toLowerCase() === currentUser.email.toLowerCase() || r.user_id === currentUser.id
+                  const userRegs = getStoredEventRegistrations().filter(
+                    (r) => r.email.toLowerCase() === currentUser.email.toLowerCase() || r.user_id === currentUser.id
                   );
                   const allEvents = getAllAnnouncedEvents();
 
@@ -1847,50 +1848,48 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
       </AnimatePresence>
 
       {/* 3D CLAYMORPHISM FLOATING BOTTOM NAVIGATION BAR FOR STUDENTS (MOBILE/PORTRAIT) */}
-      <div className="lg:hidden fixed bottom-3 left-3 right-3 z-40 clay-pill bg-[#eef2f9]/95 backdrop-blur-2xl border border-white p-2 flex items-center justify-around shadow-[0_15px_35px_rgba(150,165,205,0.45)] flex">
+      <div className="lg:hidden fixed bottom-2.5 left-3 right-3 z-40 clay-pill bg-[#eef2f9]/95 backdrop-blur-2xl border border-white py-1 px-2 flex items-center justify-around shadow-[0_12px_28px_rgba(150,165,205,0.38)] max-w-md mx-auto">
         <button
           onClick={() => setActiveTab('portal')}
-          className={`flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer ${
+          className={`flex flex-col items-center gap-0.5 px-2.5 py-0.5 rounded-xl transition-all cursor-pointer ${
             activeTab === 'portal' 
-              ? 'bg-[#dfe6f5] text-indigo-600 font-black shadow-[inset_2px_2px_5px_rgba(150,165,205,0.5),inset_-2px_-2px_5px_rgba(255,255,255,0.8)]' 
+              ? 'bg-[#dfe6f5] text-indigo-600 font-black shadow-[inset_2px_2px_4px_rgba(150,165,205,0.5),inset_-2px_-2px_4px_rgba(255,255,255,0.8)]' 
               : 'text-slate-600 font-bold hover:text-slate-900'
           }`}
         >
           <LayoutDashboard className="w-4 h-4 text-indigo-600" />
-          <span className="text-[9px]">Portal</span>
+          <span className="text-[9px] font-bold leading-none">Portal</span>
         </button>
-
-
 
         <button
           onClick={() => setActiveTab('registrations')}
-          className={`flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer relative ${
+          className={`flex flex-col items-center gap-0.5 px-2.5 py-0.5 rounded-xl transition-all cursor-pointer relative ${
             activeTab === 'registrations' 
-              ? 'bg-[#e0f2fe] text-sky-800 font-black shadow-[inset_2px_2px_5px_rgba(56,189,248,0.3),inset_-2px_-2px_5px_rgba(255,255,255,0.8)]' 
+              ? 'bg-[#e0f2fe] text-sky-800 font-black shadow-[inset_2px_2px_4px_rgba(56,189,248,0.3),inset_-2px_-2px_4px_rgba(255,255,255,0.8)]' 
               : 'text-slate-600 font-bold hover:text-slate-900'
           }`}
         >
           <Ticket className="w-4 h-4 text-sky-600" />
-          <span className="text-[9px]">Event</span>
-          {getEventRegistrations().filter(r => r.email.toLowerCase() === currentUser.email.toLowerCase() || r.user_id === currentUser.id).length > 0 && (
-            <span className="absolute top-1 right-1 w-3 h-3 rounded-full bg-sky-500 text-white text-[8px] font-black flex items-center justify-center">
-              {getEventRegistrations().filter(r => r.email.toLowerCase() === currentUser.email.toLowerCase() || r.user_id === currentUser.id).length}
+          <span className="text-[9px] font-bold leading-none">Event</span>
+          {getStoredEventRegistrations().filter((r) => r.email.toLowerCase() === currentUser.email.toLowerCase() || r.user_id === currentUser.id).length > 0 && (
+            <span className="absolute -top-0.5 right-0.5 w-3.5 h-3.5 rounded-full bg-sky-500 text-white text-[8px] font-black flex items-center justify-center">
+              {getStoredEventRegistrations().filter((r) => r.email.toLowerCase() === currentUser.email.toLowerCase() || r.user_id === currentUser.id).length}
             </span>
           )}
         </button>
 
         <button
           onClick={() => setActiveTab('announcements')}
-          className={`flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer relative ${
+          className={`flex flex-col items-center gap-0.5 px-2.5 py-0.5 rounded-xl transition-all cursor-pointer relative ${
             activeTab === 'announcements' 
-              ? 'bg-[#ede9fe] text-purple-800 font-black shadow-[inset_2px_2px_5px_rgba(139,92,246,0.3),inset_-2px_-2px_5px_rgba(255,255,255,0.8)]' 
+              ? 'bg-[#ede9fe] text-purple-800 font-black shadow-[inset_2px_2px_4px_rgba(139,92,246,0.3),inset_-2px_-2px_4px_rgba(255,255,255,0.8)]' 
               : 'text-slate-600 font-bold hover:text-slate-900'
           }`}
         >
           <Bell className="w-4 h-4 text-amber-500" />
-          <span className="text-[9px]">Notices</span>
+          <span className="text-[9px] font-bold leading-none">Notices</span>
           {announcements.length > 0 && (
-            <span className="absolute top-1 right-1 w-3 h-3 rounded-full bg-rose-500 text-white text-[8px] font-black flex items-center justify-center">
+            <span className="absolute -top-0.5 right-0.5 w-3.5 h-3.5 rounded-full bg-rose-500 text-white text-[8px] font-black flex items-center justify-center">
               {announcements.length}
             </span>
           )}
@@ -1898,26 +1897,26 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
 
         <button
           onClick={() => setActiveTab('projects')}
-          className={`flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer relative ${
+          className={`flex flex-col items-center gap-0.5 px-2.5 py-0.5 rounded-xl transition-all cursor-pointer relative ${
             activeTab === 'projects' 
-              ? 'bg-[#e0f2fe] text-blue-800 font-black shadow-[inset_2px_2px_5px_rgba(6,182,212,0.3),inset_-2px_-2px_5px_rgba(255,255,255,0.8)]' 
+              ? 'bg-[#e0f2fe] text-blue-800 font-black shadow-[inset_2px_2px_4px_rgba(6,182,212,0.3),inset_-2px_-2px_4px_rgba(255,255,255,0.8)]' 
               : 'text-slate-600 font-bold hover:text-slate-900'
           }`}
         >
           <Rocket className="w-4 h-4 text-indigo-600" />
-          <span className="text-[9px]">Projects</span>
+          <span className="text-[9px] font-bold leading-none">Projects</span>
         </button>
 
         <button
           onClick={() => setActiveTab('chat')}
-          className={`flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer ${
+          className={`flex flex-col items-center gap-0.5 px-2.5 py-0.5 rounded-xl transition-all cursor-pointer ${
             activeTab === 'chat' 
-              ? 'bg-[#d1fae5] text-emerald-800 font-black shadow-[inset_2px_2px_5px_rgba(16,185,129,0.3),inset_-2px_-2px_5px_rgba(255,255,255,0.8)]' 
+              ? 'bg-[#d1fae5] text-emerald-800 font-black shadow-[inset_2px_2px_4px_rgba(16,185,129,0.3),inset_-2px_-2px_4px_rgba(255,255,255,0.8)]' 
               : 'text-slate-600 font-bold hover:text-slate-900'
           }`}
         >
           <MessagesSquare className="w-4 h-4 text-emerald-600" />
-          <span className="text-[9px]">Chat</span>
+          <span className="text-[9px] font-bold leading-none">Chat</span>
         </button>
       </div>
 

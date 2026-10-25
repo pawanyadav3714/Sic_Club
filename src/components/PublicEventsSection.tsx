@@ -55,16 +55,28 @@ export default function PublicEventsSection({ onNavigateAuth }: PublicEventsSect
     };
   }, [showRegModal]);
 
-  const [regForm, setRegForm] = useState({
+  const [regForm, setRegForm] = useState<{
+    name: string;
+    email: string;
+    phone_no: string;
+    branch: string;
+    registration_no: string;
+    registration_type: 'individual' | 'team';
+    team_name: string;
+    category: 'software' | 'hardware';
+    team_members: { name: string; registration_no: string; branch: string; phone_no: string }[];
+    selected_problem_statement?: string;
+  }>({
     name: '',
     email: '',
     phone_no: '',
-    branch: 'Computer Science & Engineering',
+    branch: 'Computer Science and Engineering',
     registration_no: '',
     registration_type: 'individual',
     team_name: '',
     category: 'software',
     team_members: [],
+    selected_problem_statement: '',
   });
   const [regResult, setRegResult] = useState<{
     success: boolean;
@@ -128,8 +140,8 @@ export default function PublicEventsSection({ onNavigateAuth }: PublicEventsSect
       branch: regForm.branch,
       registration_no: regForm.registration_no.trim() || undefined,
       registration_type: regForm.registration_type,
-      team_name: regForm.registration_type === 'team' ? regForm.team_name : undefined,
-      category: regForm.registration_type === 'team' ? regForm.category : undefined,
+      team_name: regForm.team_name?.trim() || undefined,
+      category: regForm.category || undefined,
       team_members: regForm.registration_type === 'team' ? regForm.team_members : undefined,
       selected_problem_statement: regForm.selected_problem_statement,
     });

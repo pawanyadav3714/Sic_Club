@@ -588,7 +588,22 @@ export default function EventProposalsManager({
                         <button type="button" onClick={() => setProblemStatements(problemStatements.filter((_, i) => i !== idx))} className="px-3 py-2 rounded-xl bg-rose-100 text-rose-600 font-bold text-xs">Remove</button>
                       </div>
                     ))}
-                    <button type="button" onClick={() => setProblemStatements([...problemStatements, ''])} className="w-full py-3 rounded-2xl border-2 border-dashed border-slate-300 text-slate-500 font-bold text-xs hover:border-indigo-500 hover:text-indigo-600 transition-colors">+ Add Problem Statement</button>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setProblemStatements([...problemStatements, ''])} className="flex-1 py-2.5 rounded-xl border border-dashed border-slate-300 text-slate-600 font-bold text-xs hover:border-indigo-500 hover:text-indigo-600 transition-colors">+ Add Problem Statement</button>
+                      <button
+                        type="button"
+                        onClick={() => setProblemStatements([
+                          'Smart Campus & EdTech (Software)',
+                          'Agritech & IoT Integration (Hardware)',
+                          'Disaster Management & Autonomous Systems (Hardware/AI)',
+                          'Healthcare & Accessibility (Software/App)',
+                          'Sustainability & Smart City (Software/Data)',
+                        ])}
+                        className="px-3 py-2.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold text-xs hover:bg-indigo-100 transition-colors cursor-pointer"
+                      >
+                        Use 5 Official PS
+                      </button>
+                    </div>
                   </div>
                 </div>
 

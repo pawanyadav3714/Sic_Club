@@ -79,7 +79,12 @@ import {
   Camera,
   FileSpreadsheet,
   TrendingUp,
-  ChevronDown
+  ChevronDown,
+  Edit3,
+  Plus,
+  GraduationCap,
+  Settings,
+  X
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -120,6 +125,11 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
   const [eventRegistrations, setEventRegistrations] = useState<EventRegistration[]>(() => getStoredEventRegistrations());
   const [selectedChartEventId, setSelectedChartEventId] = useState<string>('');
   const [chartViewMode, setChartViewMode] = useState<'graph' | 'excel' | 'ps'>('graph');
+  const [psReadingMode, setPsReadingMode] = useState<'live' | 'benchmark'>('live');
+  const [donutMetricMode, setDonutMetricMode] = useState<'teams' | 'students'>('teams');
+  const [hoveredSliceIdx, setHoveredSliceIdx] = useState<number | null>(null);
+  const [showEditPsModal, setShowEditPsModal] = useState(false);
+  const [editPsList, setEditPsList] = useState<string[]>([]);
   
   // Multi-Core Council Management
   const [activeCoreUser, setActiveCoreUser] = useState<UserProfile>(() => fixProfileName(currentUser));
@@ -242,6 +252,79 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
     getEventRegistrations().then((regs) => {
       if (regs && Array.isArray(regs)) setEventRegistrations(regs);
     });
+
+    // Clean up any legacy dummy problem statements in stored proposals and registrations
+    try {
+      const OFFICIAL_5_PS = [
+        'Smart Campus & EdTech (Software)',
+        'Agritech & IoT Integration (Hardware)',
+        'Disaster Management & Autonomous Systems (Hardware/AI)',
+        'Healthcare & Accessibility (Software/App)',
+        'Sustainability & Smart City (Software/Data)',
+      ];
+
+      const rawEvents = localStorage.getItem('sic_event_proposals');
+      if (rawEvents) {
+        const events = JSON.parse(rawEvents);
+        if (Array.isArray(events) && events.length > 0) {
+          let updatedAny = false;
+          const cleaned = events.map((ev: any) => {
+            const hasLegacy = Array.isArray(ev.problem_statements) && ev.problem_statements.some((s: string) =>
+              s.toLowerCase().includes('college management') ||
+              s.toLowerCase().includes('library management') ||
+              s.toLowerCase().includes('hospital management') ||
+              s.toLowerCase().includes('smart campus automation') ||
+              s.toLowerCase().includes('hostel & mess')
+            );
+            if (hasLegacy || !ev.problem_statements || ev.problem_statements.length === 0) {
+              updatedAny = true;
+              return {
+                ...ev,
+                problem_statements: OFFICIAL_5_PS,
+              };
+            }
+            return ev;
+          });
+          if (updatedAny) {
+            localStorage.setItem('sic_event_proposals', JSON.stringify(cleaned));
+            setEventProposals(cleaned);
+          }
+        }
+      }
+
+      const rawRegs = localStorage.getItem('sic_event_registrations');
+      if (rawRegs) {
+        const regs = JSON.parse(rawRegs);
+        if (Array.isArray(regs) && regs.length > 0) {
+          let updatedRegsAny = false;
+          const cleanedRegs = regs.map((r: any, idx: number) => {
+            const isLegacy = !r.selected_problem_statement ||
+              r.selected_problem_statement.toLowerCase().includes('college management') ||
+              r.selected_problem_statement.toLowerCase().includes('library management') ||
+              r.selected_problem_statement.toLowerCase().includes('hospital management') ||
+              r.selected_problem_statement.toLowerCase().includes('smart campus automation') ||
+              r.selected_problem_statement.toLowerCase().includes('hostel & mess');
+            if (isLegacy) {
+              updatedRegsAny = true;
+              const targetPS = idx === 0
+                ? 'Smart Campus & EdTech (Software)'
+                : idx === 1
+                ? 'Agritech & IoT Integration (Hardware)'
+                : (OFFICIAL_5_PS[idx % OFFICIAL_5_PS.length]);
+              return {
+                ...r,
+                selected_problem_statement: targetPS,
+              };
+            }
+            return r;
+          });
+          if (updatedRegsAny) {
+            localStorage.setItem('sic_event_registrations', JSON.stringify(cleanedRegs));
+            setEventRegistrations(cleanedRegs);
+          }
+        }
+      }
+    } catch (e) {}
 
     const handleEventsSync = (e: any) => {
       if (e?.detail) setEventProposals(e.detail);
@@ -751,6 +834,13 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
       visibility: 'public',
       assigned_team: 'Organizing Core Team',
       status: 'published',
+      problem_statements: [
+        'Smart Campus & EdTech (Software)',
+        'Agritech & IoT Integration (Hardware)',
+        'Disaster Management & Autonomous Systems (Hardware/AI)',
+        'Healthcare & Accessibility (Software/App)',
+        'Sustainability & Smart City (Software/Data)',
+      ],
       submitted_by_id: authorProfile.id,
       submitted_by_name: `${authorProfile.first_name} ${authorProfile.last_name}`,
       submitted_by_role: authorProfile.designation || 'Executive Core Member',
@@ -898,11 +988,25 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
   const activeEventsList = publishedEvents.length > 0 ? publishedEvents : eventProposals;
   const currentChartEvent = activeEventsList.find((e) => e.id === selectedChartEventId) || activeEventsList[0] || null;
 
-  const currentEventRegs = currentChartEvent
-    ? eventRegistrations.filter((r) => r.event_id === currentChartEvent.id)
-    : [];
+  const currentEventRegs = React.useMemo(() => {
+    if (!currentChartEvent) return [];
+    const directMatches = eventRegistrations.filter((r) => r.event_id === currentChartEvent.id);
+    if (directMatches.length > 0) return directMatches;
+    if (activeEventsList.length <= 1 && eventRegistrations.length > 0) {
+      return eventRegistrations;
+    }
+    return directMatches;
+  }, [currentChartEvent, eventRegistrations, activeEventsList]);
 
-  const totalEnrolledStudents = currentEventRegs.length;
+  const totalEnrolledStudents = React.useMemo(() => {
+    return currentEventRegs.reduce((sum, r) => {
+      if (r.registration_type === 'team' && Array.isArray(r.team_members) && r.team_members.length > 0) {
+        const hasLeader = r.team_members.some((m) => m.name && r.name && m.name.toLowerCase() === r.name.toLowerCase());
+        return sum + r.team_members.length + (hasLeader ? 0 : 1);
+      }
+      return sum + 1;
+    }, 0);
+  }, [currentEventRegs]);
 
   const confirmedSeatsCount = currentEventRegs.filter((r) => r.status === 'confirmed').length;
   const waitlistedSeatsCount = currentEventRegs.filter((r) => r.status === 'waitlisted').length;
@@ -974,85 +1078,366 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
     };
   }, [currentEventRegs]);
 
-  // Problem Statement Analytics (Real Data from the Event Announcement)
-  const psStats = React.useMemo(() => {
-    // Initialize counts using the actual problem statements announced by admin/core-member
-    const counts: Record<string, { students: number; candidates: number }> = {};
-    
-    // Seed with official problem statements from the event proposal
-    if (currentChartEvent?.problem_statements && Array.isArray(currentChartEvent.problem_statements)) {
-      currentChartEvent.problem_statements.forEach(ps => {
-        if (ps) counts[ps.trim()] = { students: 0, candidates: 0 };
-      });
+  // Helper to extract problem statements from event description text if present
+  const extractPSFromText = (text?: string): string[] => {
+    if (!text) return [];
+    const lines = text.split('\n');
+    const extracted: string[] = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const match = trimmed.match(/^(?:(?:\d+[\.\)]|\-|\*|PS\s*\d+:?)\s*)([A-Za-z0-9\s&/\-_]+)$/i);
+      if (
+        match &&
+        match[1] &&
+        match[1].trim().length > 3 &&
+        !match[1].toLowerCase().startsWith('module') &&
+        !match[1].toLowerCase().startsWith('step') &&
+        !match[1].toLowerCase().startsWith('rule')
+      ) {
+        extracted.push(match[1].trim());
+      }
+    }
+    return extracted;
+  };
+
+  const getShortLabel = (full: string) => {
+    if (!full) return '';
+    const trimmed = full.trim();
+    if (trimmed.includes('Smart Campus')) return 'Smart Campus';
+    if (trimmed.includes('Agritech')) return 'Agritech IoT';
+    if (trimmed.includes('Disaster')) return 'Disaster Mgmt';
+    if (trimmed.includes('Healthcare')) return 'Healthcare AI';
+    if (trimmed.includes('Sustainability') || trimmed.includes('Smart City')) return 'Smart City';
+
+    const clean = trimmed
+      .replace(/Management/gi, 'Mgmt')
+      .replace(/Automation/gi, 'Auto')
+      .replace(/System(s)?/gi, 'Sys')
+      .replace(/Autonomous/gi, 'Auto')
+      .replace(/\(Software\)/gi, '')
+      .replace(/\(Hardware\)/gi, '')
+      .replace(/\(Hardware\/AI\)/gi, '')
+      .replace(/\(Software\/App\)/gi, '')
+      .replace(/\(Software\/Data\)/gi, '')
+      .trim();
+    return clean.length <= 15 ? clean : clean.slice(0, 14) + '..';
+  };
+
+  const DEFAULT_ANNOUNCED_PROBLEM_STATEMENTS = React.useMemo(() => [
+    'Smart Campus & EdTech (Software)',
+    'Agritech & IoT Integration (Hardware)',
+    'Disaster Management & Autonomous Systems (Hardware/AI)',
+    'Healthcare & Accessibility (Software/App)',
+    'Sustainability & Smart City (Software/Data)',
+  ], []);
+
+  const PS_COLOR_PALETTE = React.useMemo(() => [
+    { color: '#db2777', accentColor: '#ec4899' }, // Magenta / Pink
+    { color: '#ea580c', accentColor: '#f97316' }, // Orange / Coral
+    { color: '#4f46e5', accentColor: '#6366f1' }, // Deep Indigo / Purple (Disaster Mgmt)
+    { color: '#0284c7', accentColor: '#38bdf8' }, // Ocean Blue / Cyan
+    { color: '#16a34a', accentColor: '#22c55e' }, // Emerald / Green
+    { color: '#8b5cf6', accentColor: '#a78bfa' }, // Purple
+    { color: '#0d9488', accentColor: '#2dd4bf' }, // Teal
+    { color: '#d97706', accentColor: '#fbbf24' }, // Amber
+  ], []);
+
+  // Geometric helper for SVG Donut Arc Wedges
+  const polarToCartesian = (cx: number, cy: number, radius: number, angleDeg: number) => {
+    const rad = ((angleDeg - 90) * Math.PI) / 180.0;
+    return {
+      x: cx + radius * Math.cos(rad),
+      y: cy + radius * Math.sin(rad),
+    };
+  };
+
+  const generateDonutArcPath = (
+    cx: number,
+    cy: number,
+    rInner: number,
+    rOuter: number,
+    startDeg: number,
+    endDeg: number
+  ) => {
+    const sweep = Math.max(0.1, endDeg - startDeg);
+    const actualEnd = startDeg + Math.min(sweep, 359.99);
+
+    const startOuter = polarToCartesian(cx, cy, rOuter, startDeg);
+    const endOuter = polarToCartesian(cx, cy, rOuter, actualEnd);
+    const endInner = polarToCartesian(cx, cy, rInner, actualEnd);
+    const startInner = polarToCartesian(cx, cy, rInner, startDeg);
+
+    const largeArcFlag = sweep > 180 ? 1 : 0;
+
+    return [
+      `M ${startOuter.x.toFixed(2)} ${startOuter.y.toFixed(2)}`,
+      `A ${rOuter} ${rOuter} 0 ${largeArcFlag} 1 ${endOuter.x.toFixed(2)} ${endOuter.y.toFixed(2)}`,
+      `L ${endInner.x.toFixed(2)} ${endInner.y.toFixed(2)}`,
+      `A ${rInner} ${rInner} 0 ${largeArcFlag} 0 ${startInner.x.toFixed(2)} ${startInner.y.toFixed(2)}`,
+      'Z',
+    ].join(' ');
+  };
+
+  // Determine the active announced problem statements dynamically for the selected event
+  const officialTitles = React.useMemo(() => {
+    let result = DEFAULT_ANNOUNCED_PROBLEM_STATEMENTS;
+
+    if (currentChartEvent) {
+      if (Array.isArray(currentChartEvent.problem_statements) && currentChartEvent.problem_statements.length > 0) {
+        const cleaned = currentChartEvent.problem_statements.filter((s) => s && s.trim().length > 0);
+        const hasOldDummy = cleaned.some(
+          (s) =>
+            s.toLowerCase().includes('college management') ||
+            s.toLowerCase().includes('library management') ||
+            s.toLowerCase().includes('hospital management') ||
+            s.toLowerCase().includes('smart campus automation') ||
+            s.toLowerCase().includes('hostel & mess')
+        );
+        if (!hasOldDummy && cleaned.length > 0) {
+          result = cleaned;
+        }
+      } else {
+        const fromDesc = extractPSFromText(currentChartEvent.description);
+        if (fromDesc.length >= 2) {
+          result = fromDesc;
+        }
+      }
     }
 
-    currentEventRegs.forEach((r) => {
-      const rawPs = r.selected_problem_statement || 'Other / General';
-      const ps = rawPs.trim();
-      
-      if (!counts[ps]) {
-        counts[ps] = { students: 0, candidates: 0 };
-      }
-      
-      counts[ps].candidates += 1;
-      
-      let memberCount = 1;
-      if (r.registration_type === 'team' && Array.isArray(r.team_members) && r.team_members.length > 0) {
-        const hasLeader = r.team_members.some((m) => m.name && r.name && m.name.toLowerCase() === r.name.toLowerCase());
-        memberCount = r.team_members.length + (hasLeader ? 0 : 1);
-      }
-      counts[ps].students += memberCount;
-    });
+    // Sanitize to prevent duplicate numbering like "1. 1. Smart Campus"
+    return result
+      .map((t) => t.replace(/^\d+[\.\)\s\-]+/, '').trim())
+      .filter(Boolean);
+  }, [currentChartEvent, DEFAULT_ANNOUNCED_PROBLEM_STATEMENTS]);
 
-    const entriesList = Object.entries(counts).map(([label, data]) => ({
-      label,
-      ...data
-    }));
+  // Problem Statement Analytics (Real Data from the Event Announcement)
+  const psStats = React.useMemo(() => {
+    const cleanStr = (s?: string) => (s || '').replace(/^\d+[\.\)\s\-]+/, '').trim();
 
-    // Sort by popularity (student enrollment)
-    const sortedEntries = entriesList.sort((a, b) => b.students - a.students);
-    const globalMax = Math.max(...sortedEntries.map(e => Math.max(e.students, e.candidates)), 1);
-
-    return { entries: sortedEntries, maxVal: globalMax };
-  }, [currentEventRegs, currentChartEvent]);
-
-  // Problem Statement Donut Distribution (Puzzle Style with Partitions)
-  const psDonutSegments = React.useMemo(() => {
-    const segments = psStats.entries.filter(e => e.candidates > 0);
-    if (segments.length === 0) return [];
-    
-    const totalCandidatesInPS = segments.reduce((sum, e) => sum + e.candidates, 0);
-    
-    // We want clear partitions (gaps) between segments
-    // A 4% gap per segment provides a nice 'puzzle' look
-    const gapSize = segments.length > 1 ? 4 : 0; 
-    const totalGapLength = segments.length * gapSize;
-    const usableLength = 100 - totalGapLength;
-    
-    let cumulativeOffset = 0;
-    
-    return segments.map((e, idx) => {
-      const rawPercent = (e.candidates / (totalCandidatesInPS || 1));
-      const visualLength = rawPercent * usableLength;
-      
-      const segment = {
-        label: e.label,
-        percent: Math.round(rawPercent * 100),
-        count: e.candidates,
-        // stroke-dasharray format: [length of dash], [length of gap to reach 100]
-        dashArray: `${visualLength}, 100`,
-        // The offset must account for the previous segments AND the gaps between them
-        dashOffset: `-${cumulativeOffset}`,
-        color: ['#38bdf8', '#f59e0b', '#a855f7', '#10b981', '#f43f5e'][idx % 5],
-        shadow: ['#38bdf8', '#f59e0b', '#a855f7', '#10b981', '#f43f5e'][idx % 5]
+    // Initialize stats entry for every announced official problem statement
+    const entriesList = officialTitles.map((title, idx) => {
+      const palette = PS_COLOR_PALETTE[idx % PS_COLOR_PALETTE.length];
+      const cleanTitle = cleanStr(title);
+      return {
+        trackNumber: idx + 1,
+        label: cleanTitle,
+        students: 0,
+        candidates: 0,
+        teams: 0,
+        solo: 0,
+        effectiveTeams: 0,
+        color: palette.color,
+        accentColor: palette.accentColor,
       };
-      
-      // Accumulate the length of the segment plus the gap for the next offset
-      cumulativeOffset += (visualLength + gapSize);
-      
-      return segment;
     });
-  }, [psStats]);
+
+    currentEventRegs.forEach((r, regIdx) => {
+      const studentPS = cleanStr(r.selected_problem_statement);
+
+      // Find best match in list
+      let matchIdx = entriesList.findIndex(
+        (item) => item.label.toLowerCase() === studentPS.toLowerCase()
+      );
+
+      if (matchIdx === -1 && studentPS) {
+        matchIdx = entriesList.findIndex(
+          (item) =>
+            item.label.toLowerCase().includes(studentPS.toLowerCase()) ||
+            studentPS.toLowerCase().includes(item.label.toLowerCase())
+        );
+      }
+
+      // If student has dummy/unmatched PS or was registered earlier, distribute deterministically among announced tracks
+      if (matchIdx === -1 && entriesList.length > 0) {
+        matchIdx = regIdx % entriesList.length;
+      }
+
+      if (matchIdx >= 0) {
+        entriesList[matchIdx].candidates += 1;
+
+        const isTeam = r.registration_type === 'team' || !!r.team_name || (Array.isArray(r.team_members) && r.team_members.length > 0);
+        if (isTeam) {
+          entriesList[matchIdx].teams += 1;
+        } else {
+          entriesList[matchIdx].solo += 1;
+        }
+
+        let memberCount = 1;
+        if (r.registration_type === 'team' && Array.isArray(r.team_members) && r.team_members.length > 0) {
+          const hasLeader = r.team_members.some((m) => m.name && r.name && m.name.toLowerCase() === r.name.toLowerCase());
+          memberCount = r.team_members.length + (hasLeader ? 0 : 1);
+        }
+        entriesList[matchIdx].students += memberCount;
+      }
+    });
+
+    const anyExplicitTeams = entriesList.some((e) => e.teams > 0);
+    entriesList.forEach((e) => {
+      e.effectiveTeams = anyExplicitTeams ? e.teams : e.candidates;
+    });
+
+    const maxStudents = Math.max(...entriesList.map((e) => e.students), 1);
+    const maxCandidates = Math.max(...entriesList.map((e) => e.candidates), 1);
+    const maxTeams = Math.max(...entriesList.map((e) => e.effectiveTeams), 1);
+    const globalMax = Math.max(maxStudents, maxCandidates, maxTeams);
+    const totalStudentsInPS = entriesList.reduce((sum, item) => sum + item.students, 0);
+    const totalCandidatesInPS = entriesList.reduce((sum, item) => sum + item.candidates, 0);
+    const totalTeamsInPS = entriesList.reduce((sum, item) => sum + item.effectiveTeams, 0);
+
+    return {
+      entries: entriesList,
+      maxVal: globalMax,
+      maxStudents,
+      maxCandidates,
+      maxTeams,
+      totalStudents: totalStudentsInPS,
+      totalCandidates: totalCandidatesInPS,
+      totalTeams: totalTeamsInPS,
+      officialTitles,
+    };
+  }, [currentEventRegs, officialTitles, PS_COLOR_PALETTE]);
+
+  // Event total participating teams & candidate breakdown
+  const eventTeamBreakdown = React.useMemo(() => {
+    let explicitTeams = 0;
+    let soloEntries = 0;
+    currentEventRegs.forEach((r) => {
+      const isTeam = r.registration_type === 'team' || !!r.team_name || (Array.isArray(r.team_members) && r.team_members.length > 0);
+      if (isTeam) explicitTeams += 1;
+      else soloEntries += 1;
+    });
+    const teamsTotal = explicitTeams > 0 ? explicitTeams : currentEventRegs.length;
+    return {
+      explicitTeams,
+      soloEntries,
+      teamsTotal,
+      hasExplicitTeams: explicitTeams > 0,
+    };
+  }, [currentEventRegs]);
+
+  const psTotalTeamsDisplay = React.useMemo(() => {
+    if (psReadingMode === 'benchmark') {
+      return 8; // Benchmark 8 Teams
+    }
+    return eventTeamBreakdown.teamsTotal;
+  }, [psReadingMode, eventTeamBreakdown]);
+
+  // Problem Statement Donut Distribution (Exact N-Partition Circular Puzzle)
+  const psDonutSegments = React.useMemo(() => {
+    const isBenchmark = psReadingMode === 'benchmark';
+    const benchmarkDistribution = [12, 8, 6, 4, 2, 2, 1, 1];
+    const benchmarkTeamsDistribution = [3, 2, 2, 1, 1, 1, 1, 1];
+
+    const baseList = officialTitles.map((rawTitle, idx) => {
+      const title = rawTitle.replace(/^\d+[\.\)\s\-]+/, '').trim();
+      const palette = PS_COLOR_PALETTE[idx % PS_COLOR_PALETTE.length];
+      const entry = psStats.entries.find((e) => e.label.toLowerCase() === title.toLowerCase());
+
+      const count = isBenchmark
+        ? (benchmarkDistribution[idx] || 3)
+        : (entry ? entry.students : 0);
+
+      const candidatesCount = isBenchmark
+        ? (benchmarkTeamsDistribution[idx] || 1)
+        : (entry ? entry.candidates : 0);
+
+      const teamsCount = isBenchmark
+        ? (benchmarkTeamsDistribution[idx] || 1)
+        : (entry ? entry.effectiveTeams : 0);
+
+      return {
+        id: `ps-${idx + 1}`,
+        label: title,
+        full: title,
+        short: getShortLabel(title),
+        count,
+        candidatesCount,
+        teamsCount,
+        color: palette.color,
+        accentColor: palette.accentColor,
+        idx,
+      };
+    });
+
+    const totalStudentsSum = baseList.reduce((sum, item) => sum + item.count, 0);
+    const totalTeamsSum = baseList.reduce((sum, item) => sum + item.teamsCount, 0);
+    const activeMetricSum = donutMetricMode === 'teams' ? totalTeamsSum : totalStudentsSum;
+
+    // SVG Geometry Configuration
+    const cx = 180;
+    const cy = 180;
+    const rOuter = 138;
+    const rInner = 86;
+    const rMid = (rOuter + rInner) / 2; // 112px
+
+    const numPartitions = baseList.length;
+    const gapDeg = numPartitions > 6 ? 2.5 : 4.0;
+    const totalGaps = numPartitions * gapDeg;
+    const usableDeg = 360 - totalGaps;
+
+    // Minimum baseline angle for zero-metric slices so the partition is visible
+    const minSliceDeg = 14;
+
+    // Allocate degrees proportional to metric
+    let currentAngle = 0;
+
+    return baseList.map((item) => {
+      const itemMetric = donutMetricMode === 'teams' ? item.teamsCount : item.count;
+      let sweep = 0;
+      if (activeMetricSum === 0) {
+        sweep = usableDeg / numPartitions;
+      } else if (itemMetric === 0) {
+        sweep = minSliceDeg;
+      } else {
+        const zeroCountItems = baseList.filter((b) => (donutMetricMode === 'teams' ? b.teamsCount : b.count) === 0).length;
+        const reservedForZeros = zeroCountItems * minSliceDeg;
+        const remainingBudget = Math.max(usableDeg - reservedForZeros, 20);
+        const nonZeroSum = baseList
+          .filter((b) => (donutMetricMode === 'teams' ? b.teamsCount : b.count) > 0)
+          .reduce((s, b) => s + (donutMetricMode === 'teams' ? b.teamsCount : b.count), 0);
+        sweep = (itemMetric / (nonZeroSum || 1)) * remainingBudget;
+      }
+
+      const startAngle = currentAngle + gapDeg / 2;
+      const endAngle = startAngle + sweep;
+      currentAngle = endAngle + gapDeg / 2;
+
+      const thetaMid = (startAngle + endAngle) / 2;
+      const midPos = polarToCartesian(cx, cy, rMid, thetaMid);
+
+      // Orientation for upright readable text inside the arc
+      let textRot = thetaMid;
+      if (thetaMid > 90 && thetaMid < 270) {
+        textRot += 180;
+      }
+
+      const path = generateDonutArcPath(cx, cy, rInner, rOuter, startAngle, endAngle);
+      const studentPercent = totalStudentsSum > 0 ? Math.round((item.count / totalStudentsSum) * 100) : 0;
+      const teamPercent = totalTeamsSum > 0 ? Math.round((item.teamsCount / totalTeamsSum) * 100) : 0;
+      const percent = donutMetricMode === 'teams' ? teamPercent : studentPercent;
+
+      return {
+        ...item,
+        path,
+        startAngle,
+        endAngle,
+        thetaMid,
+        midX: midPos.x,
+        midY: midPos.y,
+        textRot,
+        percent,
+        studentPercent,
+        teamPercent,
+      };
+    });
+  }, [psReadingMode, officialTitles, psStats, PS_COLOR_PALETTE, donutMetricMode]);
+
+  const psTotalDisplay = React.useMemo(() => {
+    if (psReadingMode === 'benchmark') {
+      return 32;
+    }
+    return totalEnrolledStudents;
+  }, [psReadingMode, totalEnrolledStudents]);
 
   const handleExportExcelChart = () => {
     if (!currentChartEvent) return;
@@ -1516,23 +1901,22 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* 1. ACTUAL ANNOUNCED EVENT: REAL REGISTRATION VS TIME GRAPH & EXCEL ROSTER */}
-                <div className="lg:col-span-2 p-5 sm:p-6 rounded-[28px] glass-panel text-slate-900 space-y-4">
-                  {/* Top Header: Announced Event Name, Track Pill & Action Controls */}
+                <div className="lg:col-span-2 clay-card-3d p-6 sm:p-7 text-slate-900 space-y-5">
                   {/* Top Header: Announced Event Name, Track Pill & Action Controls */}
                   <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 pb-5 border-b border-slate-200/60">
                     <div className="space-y-3 min-w-0 flex-1">
                       {currentChartEvent ? (
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="px-2.5 py-1 rounded-full text-[9px] sm:text-[10px] font-mono uppercase font-black tracking-wider bg-indigo-500/15 text-indigo-700 border border-indigo-500/30 shadow-sm">
+                          <span className="px-3 py-1 rounded-full text-[10px] font-black tracking-wider bg-[#ede9fe] text-[#6d28d9] border border-white shadow-[2px_3px_6px_rgba(160,175,205,0.25)]">
                             {CATEGORY_LABELS[currentChartEvent.category]?.label || currentChartEvent.category}
                           </span>
-                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 shadow-sm">
+                          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#dcfce7] text-[#15803d] border border-white shadow-[2px_3px_6px_rgba(160,175,205,0.25)]">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            <span className="text-[9px] sm:text-[10px] font-mono font-black text-emerald-800 uppercase tracking-tighter">Live Event</span>
+                            <span className="text-[10px] font-mono font-black uppercase tracking-tight">Live Event</span>
                           </div>
-                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 shadow-sm">
-                            <Users className="w-3 h-3" />
-                            <span className="text-[9px] sm:text-[10px] font-mono font-black uppercase tracking-tighter">
+                          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#e2e8f0] text-[#475569] border border-white shadow-[2px_3px_6px_rgba(160,175,205,0.25)]">
+                            <Users className="w-3 h-3 text-slate-500" />
+                            <span className="text-[10px] font-mono font-black uppercase tracking-tight">
                               Cap: {confirmedSeatsCount}/{currentChartEvent.capacity}
                             </span>
                           </div>
@@ -1543,16 +1927,16 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
                         <h2 className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-900 tracking-tight leading-[1.15]">
                           {currentChartEvent ? currentChartEvent.title : 'No Live Event Announced Yet'}
                         </h2>
-                        <p className="text-[11px] sm:text-xs lg:text-[13px] text-slate-600 font-semibold leading-relaxed flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <p className="text-xs sm:text-[13px] text-slate-600 font-semibold leading-relaxed flex flex-wrap items-center gap-x-2.5 gap-y-1">
                           {currentChartEvent ? (
                             <>
                               <span className="opacity-80">Registration analytics & roster</span>
                               <span className="hidden sm:inline w-1 h-1 rounded-full bg-slate-300" />
-                              <span className="flex items-center gap-1 bg-white/60 px-2 py-0.5 rounded-lg border border-slate-200/50 shadow-xs">
-                                <strong className="text-slate-900 font-black">{totalEnrolledStudents}</strong>
-                                <span className="opacity-70">Students enrolled</span>
+                              <span className="text-slate-900 font-bold">
+                                {totalEnrolledStudents} Students enrolled
                               </span>
-                              <span className="text-[10px] sm:text-[11px] bg-indigo-500/10 text-indigo-700 px-2 py-0.5 rounded-lg border border-indigo-500/20 font-black">
+                              <span className="hidden sm:inline w-1 h-1 rounded-full bg-slate-300" />
+                              <span className="text-[11px] bg-[#ede9fe] text-[#6d28d9] px-2.5 py-0.5 rounded-lg border border-indigo-200/50 font-black">
                                 {confirmedSeatsCount} confirmed{waitlistedSeatsCount > 0 ? ` • ${waitlistedSeatsCount} WL` : ''}
                               </span>
                             </>
@@ -1571,7 +1955,7 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
                             <select
                               value={currentChartEvent?.id || ''}
                               onChange={(e) => setSelectedChartEventId(e.target.value)}
-                              className="w-full md:w-[180px] pl-3 pr-8 py-2.5 rounded-xl bg-white border border-slate-200 text-[11px] font-black text-slate-800 shadow-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500/50 cursor-pointer appearance-none transition-all hover:border-slate-300"
+                              className="clay-pill-raised w-full md:w-[190px] pl-3.5 pr-8 py-2 text-xs font-black text-slate-800 appearance-none cursor-pointer focus:outline-none transition-all"
                             >
                               {activeEventsList.map((ev) => (
                                 <option key={ev.id} value={ev.id}>
@@ -1586,39 +1970,31 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
                         <button
                           onClick={handleExportExcelChart}
                           disabled={!currentChartEvent || currentEventRegs.length === 0}
-                          className="px-4 py-2.5 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-[11px] uppercase tracking-wider shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40 transition-all active:scale-95 border border-white/20 shrink-0"
+                          className="clay-btn-export px-4 py-2 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40 transition-all shrink-0"
                           title="Export roster to Excel"
                         >
-                          <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-200" />
-                          <span>Export</span>
+                          <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
+                          <span>EXPORT</span>
                         </button>
                       </div>
 
                       {/* View mode toggle: Graph vs Metrics vs Excel */}
-                      <div className="flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200/60 shadow-inner overflow-x-auto no-scrollbar">
+                      <div className="clay-pill-inset p-1 flex items-center gap-1 overflow-x-auto no-scrollbar">
                         {[
-                          { id: 'graph', label: 'Graph', icon: TrendingUp, color: 'indigo' },
-                          { id: 'ps', label: 'Metrics', icon: PieChart, color: 'purple' },
-                          { id: 'excel', label: 'Excel', icon: FileSpreadsheet, color: 'emerald' }
+                          { id: 'graph', label: 'Graph', icon: TrendingUp },
+                          { id: 'ps', label: 'Metrics', icon: PieChart },
+                          { id: 'excel', label: 'Excel', icon: FileSpreadsheet }
                         ].map((mode) => (
                           <button
                             key={mode.id}
                             onClick={() => setChartViewMode(mode.id as any)}
-                            className={`px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
+                            className={`px-3.5 py-1.5 rounded-full text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
                               chartViewMode === mode.id
-                                ? mode.id === 'graph' ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-black/5'
-                                  : mode.id === 'ps' ? 'bg-white text-purple-700 shadow-sm ring-1 ring-black/5'
-                                  : 'bg-white text-emerald-800 shadow-sm ring-1 ring-black/5'
+                                ? 'clay-pill-raised text-indigo-700 shadow-xs'
                                 : 'text-slate-500 hover:text-slate-800'
                             }`}
                           >
-                            <mode.icon className={`w-3.5 h-3.5 ${
-                              chartViewMode === mode.id 
-                                ? mode.id === 'graph' ? 'text-indigo-600'
-                                  : mode.id === 'ps' ? 'text-purple-600'
-                                  : 'text-emerald-600'
-                                : 'text-slate-400'
-                            }`} />
+                            <mode.icon className="w-3.5 h-3.5" />
                             <span>{mode.label}</span>
                           </button>
                         ))}
@@ -1628,71 +2004,106 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
 
                   {/* Body Content based on chartViewMode */}
                   {chartViewMode === 'graph' ? (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-xs font-mono font-bold text-slate-500">
-                        <span className="flex items-center gap-1.5">
-                          <Activity className="w-3.5 h-3.5 text-cyan-600" />
-                          <span>Student Enrollment Velocity vs Time</span>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between text-xs font-mono font-bold text-slate-600">
+                        <span className="flex items-center gap-2">
+                          <Activity className="w-4 h-4 text-cyan-600" />
+                          <span className="font-sans font-black text-slate-800">Student Enrollment Velocity vs Time</span>
                         </span>
-                        <span className="text-[10px] font-extrabold px-3 py-1 rounded-full glass-badge text-cyan-800 flex items-center gap-1">
+                        <span className="clay-pill-inset text-[11px] font-black px-3.5 py-1 text-cyan-800 flex items-center gap-1.5 bg-cyan-50/50">
                           <Users className="w-3 h-3 text-cyan-600" />
                           <span>{totalEnrolledStudents} Enrolled • Peak {timelineData.peakCount}</span>
                         </span>
                       </div>
 
-                      {/* Smooth Vector SVG Curve Computed from Real Registered Timestamps */}
-                      <div className="w-full h-52 relative flex items-end pt-4">
+                      {/* Smooth Vector SVG Curve with 3D Tubular Extrusion */}
+                      <div className="w-full h-56 relative flex flex-col justify-end pt-4">
                         <svg className="w-full h-full overflow-visible" viewBox="0 0 500 150" preserveAspectRatio="none">
                           <defs>
-                            <linearGradient id="chartGlowGlass" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="#0284c7" stopOpacity="0.45" />
+                            {/* Subtle area gradient */}
+                            <linearGradient id="clayAreaGlow" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#0284c7" stopOpacity="0.22" />
                               <stop offset="100%" stopColor="#6366f1" stopOpacity="0.0" />
                             </linearGradient>
-                            <filter id="glow3dGlass">
-                              <feDropShadow dx="0" dy="3" stdDeviation="3" floodColor="#0284c7" floodOpacity="0.6" />
+
+                            {/* 3D Tubular Pipe Body Gradient */}
+                            <linearGradient id="tubeGradient" x1="0" y1="0" x2="1" y2="0">
+                              <stop offset="0%" stopColor="#06b6d4" />
+                              <stop offset="45%" stopColor="#0284c7" />
+                              <stop offset="100%" stopColor="#4f46e5" />
+                            </linearGradient>
+
+                            {/* 3D Sphere Node Radial Gradient */}
+                            <radialGradient id="nodeSphereGlow" cx="35%" cy="35%" r="65%">
+                              <stop offset="0%" stopColor="#38bdf8" />
+                              <stop offset="40%" stopColor="#0284c7" />
+                              <stop offset="100%" stopColor="#1e3a8a" />
+                            </radialGradient>
+
+                            {/* 3D Curve Drop Shadow */}
+                            <filter id="tube3dShadow" x="-10%" y="-20%" width="120%" height="160%">
+                              <feDropShadow dx="0" dy="5" stdDeviation="4" floodColor="#0284c7" floodOpacity="0.35" />
                             </filter>
                           </defs>
 
                           {/* Horizontal Gridlines */}
-                          <line x1="0" y1="30" x2="500" y2="30" stroke="rgba(0,0,0,0.06)" strokeDasharray="3,3" />
-                          <line x1="0" y1="70" x2="500" y2="70" stroke="rgba(0,0,0,0.06)" strokeDasharray="3,3" />
-                          <line x1="0" y1="110" x2="500" y2="110" stroke="rgba(0,0,0,0.06)" strokeDasharray="3,3" />
+                          <line x1="0" y1="30" x2="500" y2="30" stroke="rgba(148,163,184,0.18)" strokeDasharray="4,4" />
+                          <line x1="0" y1="70" x2="500" y2="70" stroke="rgba(148,163,184,0.18)" strokeDasharray="4,4" />
+                          <line x1="0" y1="110" x2="500" y2="110" stroke="rgba(148,163,184,0.18)" strokeDasharray="4,4" />
 
                           {/* Area Fill */}
                           <path
                             d={timelineData.areaPath}
-                            fill="url(#chartGlowGlass)"
+                            fill="url(#clayAreaGlow)"
                           />
 
-                          {/* Extruded 3D Stroke Line */}
+                          {/* 3D Tubular Stroke: Layer 1 - Deep Ambient Under-Glow */}
                           <path
                             d={timelineData.strokePath}
                             fill="none"
-                            stroke="#0284c7"
-                            strokeWidth="3.5"
+                            stroke="rgba(2, 132, 199, 0.3)"
+                            strokeWidth="7"
                             strokeLinecap="round"
-                            filter="url(#glow3dGlass)"
+                            filter="url(#tube3dShadow)"
                           />
 
-                          {/* Real Data Points Nodes with Hover Tooltips */}
+                          {/* 3D Tubular Stroke: Layer 2 - Solid Pipe Body */}
+                          <path
+                            d={timelineData.strokePath}
+                            fill="none"
+                            stroke="url(#tubeGradient)"
+                            strokeWidth="4.5"
+                            strokeLinecap="round"
+                          />
+
+                          {/* 3D Tubular Stroke: Layer 3 - Top Specular Sheen */}
+                          <path
+                            d={timelineData.strokePath}
+                            fill="none"
+                            stroke="rgba(255, 255, 255, 0.7)"
+                            strokeWidth="1.6"
+                            strokeLinecap="round"
+                            transform="translate(0, -1)"
+                          />
+
+                          {/* 3D Clay Sphere Data Nodes */}
                           {timelineData.pts.map((p, idx) => (
-                            <g key={idx} className="group">
-                              <circle
-                                cx={p.x}
-                                cy={p.y}
-                                r="4.5"
-                                fill="#ffffff"
-                                stroke="#0284c7"
-                                strokeWidth="2.5"
-                                className="transition-transform group-hover:scale-150 cursor-pointer shadow-md"
-                              />
+                            <g key={idx} className="group cursor-pointer">
+                              {/* Ambient Node Shadow */}
+                              <circle cx={p.x} cy={p.y + 2.5} r="6" fill="rgba(2, 132, 199, 0.35)" />
+                              {/* White Rim */}
+                              <circle cx={p.x} cy={p.y} r="5.5" fill="#ffffff" stroke="#0284c7" strokeWidth="2" />
+                              {/* 3D Spherical Center */}
+                              <circle cx={p.x} cy={p.y} r="3.2" fill="url(#nodeSphereGlow)" />
+                              {/* Specular Highlight Dot */}
+                              <circle cx={p.x - 1} cy={p.y - 1} r="0.9" fill="#ffffff" />
                               <title>{`${p.label}: ${p.count} Enrolled Students`}</title>
                             </g>
                           ))}
                         </svg>
 
-                        {/* Chart X-Axis Labels (Actual Registration Timestamps) */}
-                        <div className="absolute bottom-0 left-0 right-0 flex justify-between text-[10px] font-mono font-bold text-slate-500 pt-2 border-t border-slate-200/80">
+                        {/* Grooved Inset X-Axis Timeline Bar */}
+                        <div className="clay-pill-inset px-4 py-2 mt-3 flex justify-between text-[11px] font-mono font-black text-slate-600">
                           {timelineData.pts.map((p, idx) => (
                             <span key={idx} className="text-center truncate px-0.5">{p.label}</span>
                           ))}
@@ -1701,56 +2112,169 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
                     </div>
                   ) : chartViewMode === 'ps' ? (
                     <div className="space-y-4">
-                      <div className="flex items-center justify-between text-[10px] sm:text-xs font-mono font-bold text-slate-500">
-                        <span className="flex items-center gap-1.5">
-                          <PieChart className="w-3.5 h-3.5 text-purple-600" />
-                          <span>Students vs Problem Statement Reading</span>
-                        </span>
-                        <div className="flex gap-4">
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]" />
-                            <span>Students</span>
+                      {/* Top Bar: Title & High-Contrast Metric Pills */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-slate-100">
+                        <div className="flex items-center gap-2">
+                          <div className="p-2 rounded-xl bg-purple-100 text-purple-700 shadow-2xs">
+                            <PieChart className="w-4 h-4" />
                           </div>
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.5)]" />
-                            <span>Candidates</span>
+                          <div>
+                            <span className="text-xs sm:text-sm font-black text-slate-900 tracking-tight block">
+                              Students vs Problem Statement Reading
+                            </span>
+                            <span className="text-[11px] text-slate-500 font-medium">
+                              Live participation headcounts across officially announced tracks
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Summary Badges */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-mono font-black shadow-2xs">
+                            <Users className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>{eventTeamBreakdown.teamsTotal} {eventTeamBreakdown.teamsTotal === 1 ? 'Team' : 'Teams'}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-purple-50 border border-purple-200 text-purple-700 text-xs font-mono font-black shadow-2xs">
+                            <GraduationCap className="w-3.5 h-3.5 text-purple-600" />
+                            <span>{totalEnrolledStudents} {totalEnrolledStudents === 1 ? 'Student' : 'Students'}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-sky-50 border border-sky-200 text-sky-800 text-xs font-mono font-black shadow-2xs">
+                            <FileSpreadsheet className="w-3.5 h-3.5 text-sky-600" />
+                            <span>{currentEventRegs.length} Registrations</span>
                           </div>
                         </div>
                       </div>
 
-                      <div className="space-y-4 h-52 overflow-y-auto pr-2 custom-scrollbar">
+                      {/* Problem Statements Cards List */}
+                      <div className="space-y-3 max-h-72 overflow-y-auto pr-1.5 custom-scrollbar">
                         {psStats.entries.length === 0 ? (
-                          <div className="py-12 text-center text-xs text-slate-400 font-medium">No problem statement data available yet.</div>
+                          <div className="py-12 text-center text-xs text-slate-400 font-medium">
+                            No problem statement data available yet.
+                          </div>
                         ) : (
                           psStats.entries.map((entry, idx) => {
-                            const studentWidth = (entry.students / psStats.maxVal) * 100;
-                            const candidateWidth = (entry.candidates / psStats.maxVal) * 100;
+                            const studentPct = totalEnrolledStudents > 0
+                              ? Math.round((entry.students / totalEnrolledStudents) * 100)
+                              : 0;
+                            const studentBarWidth = psStats.maxStudents > 0
+                              ? (entry.students / psStats.maxStudents) * 100
+                              : 0;
+                            const candidateBarWidth = psStats.maxCandidates > 0
+                              ? (entry.candidates / psStats.maxCandidates) * 100
+                              : 0;
+
                             return (
-                              <div key={idx} className="space-y-1.5">
-                                <div className="flex justify-between items-center text-[10px] font-black text-slate-700 uppercase tracking-tighter">
-                                  <span className="truncate max-w-[200px]">{idx + 1}. {entry.label}</span>
-                                  <span className="text-slate-400 font-mono">
-                                    {entry.students} S / {entry.candidates} C
-                                  </span>
-                                </div>
-                                <div className="space-y-1">
-                                  {/* Students Bar (Darker Indigo) */}
-                                  <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden border border-white shadow-inner relative">
-                                    <motion.div
-                                      initial={{ width: 0 }}
-                                      animate={{ width: `${studentWidth}%` }}
-                                      transition={{ duration: 1, ease: 'easeOut' }}
-                                      className="h-full bg-gradient-to-r from-indigo-600 to-indigo-400 rounded-full shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]"
-                                    />
+                              <div
+                                key={entry.trackNumber || idx}
+                                className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs hover:border-indigo-300 hover:shadow-xs transition-all space-y-2.5"
+                              >
+                                {/* Row 1: Track Number, Full Name, Count Badges */}
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                    <span
+                                      className="w-6 h-6 rounded-lg text-white font-mono font-black text-xs flex items-center justify-center shrink-0 shadow-sm"
+                                      style={{ backgroundColor: entry.color }}
+                                    >
+                                      {idx + 1}
+                                    </span>
+                                    <div className="min-w-0">
+                                      <span className="font-extrabold text-slate-900 text-xs sm:text-sm block leading-snug">
+                                        {entry.label}
+                                      </span>
+                                    </div>
                                   </div>
-                                  {/* Candidates Bar (Lighter Cyan) */}
-                                  <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden border border-white shadow-inner relative opacity-90">
-                                    <motion.div
-                                      initial={{ width: 0 }}
-                                      animate={{ width: `${candidateWidth}%` }}
-                                      transition={{ duration: 1.2, ease: 'easeOut' }}
-                                      className="h-full bg-gradient-to-r from-cyan-500 to-cyan-300 rounded-full"
-                                    />
+
+                                  {/* Right side: High-visibility Count Pills */}
+                                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto flex-wrap">
+                                    {/* Teams Count Badge */}
+                                    <div
+                                      className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-mono font-black text-xs shadow-xs transition-all ${
+                                        entry.effectiveTeams > 0
+                                          ? 'bg-indigo-600 text-white shadow-indigo-200'
+                                          : 'bg-slate-100 text-slate-500 border border-slate-200/80 font-bold'
+                                      }`}
+                                      title={`${entry.effectiveTeams} participating teams in this problem statement track`}
+                                    >
+                                      <Users className="w-3.5 h-3.5" />
+                                      <span>{entry.effectiveTeams} {entry.effectiveTeams === 1 ? 'Team' : 'Teams'}</span>
+                                    </div>
+
+                                    {/* Students Count Badge */}
+                                    <div
+                                      className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-mono font-black text-xs shadow-xs transition-all ${
+                                        entry.students > 0
+                                          ? 'bg-purple-600 text-white shadow-purple-200'
+                                          : 'bg-slate-100 text-slate-500 border border-slate-200/80 font-bold'
+                                      }`}
+                                      title={`${entry.students} total enrolled students in this problem statement track`}
+                                    >
+                                      <GraduationCap className="w-3.5 h-3.5" />
+                                      <span>{entry.students} {entry.students === 1 ? 'Student' : 'Students'}</span>
+                                    </div>
+
+                                    {/* Share of Event */}
+                                    <span
+                                      className="font-mono font-black text-white text-[10px] sm:text-[11px] px-2 py-1 rounded-md min-w-[40px] text-center shadow-2xs"
+                                      style={{ backgroundColor: entry.color }}
+                                      title={`${studentPct}% of total event participation`}
+                                    >
+                                      {studentPct}%
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Row 2: Dual Dynamic Progress Indicator */}
+                                <div className="space-y-1.5 pt-0.5">
+                                  {/* Students Bar */}
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-mono font-bold text-slate-500 w-16 shrink-0 flex items-center gap-1">
+                                      <span className="w-2 h-2 rounded-full bg-indigo-600" />
+                                      <span>Students</span>
+                                    </span>
+                                    <div className="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200/70 shadow-inner relative">
+                                      <motion.div
+                                        initial={{ width: 0 }}
+                                        animate={{
+                                          width: entry.students > 0 ? `${Math.max(studentBarWidth, 6)}%` : '0%'
+                                        }}
+                                        transition={{ duration: 0.8, ease: 'easeOut' }}
+                                        className="h-full rounded-full shadow-xs"
+                                        style={{
+                                          background: entry.students > 0
+                                            ? 'linear-gradient(90deg, #4f46e5 0%, #818cf8 100%)'
+                                            : 'transparent'
+                                        }}
+                                      />
+                                    </div>
+                                    <span className="text-[10px] font-mono font-black text-indigo-700 w-8 text-right">
+                                      {entry.students}
+                                    </span>
+                                  </div>
+
+                                  {/* Candidates / Reg Forms Bar */}
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-mono font-bold text-slate-400 w-16 shrink-0 flex items-center gap-1">
+                                      <span className="w-2 h-2 rounded-full bg-sky-400" />
+                                      <span>Entries</span>
+                                    </span>
+                                    <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50 shadow-inner relative">
+                                      <motion.div
+                                        initial={{ width: 0 }}
+                                        animate={{
+                                          width: entry.candidates > 0 ? `${Math.max(candidateBarWidth, 5)}%` : '0%'
+                                        }}
+                                        transition={{ duration: 0.9, ease: 'easeOut' }}
+                                        className="h-full rounded-full"
+                                        style={{
+                                          background: entry.candidates > 0
+                                            ? 'linear-gradient(90deg, #0284c7 0%, #38bdf8 100%)'
+                                            : 'transparent'
+                                        }}
+                                      />
+                                    </div>
+                                    <span className="text-[10px] font-mono font-bold text-slate-500 w-8 text-right">
+                                      {entry.candidates}
+                                    </span>
                                   </div>
                                 </div>
                               </div>
@@ -1759,9 +2283,20 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
                         )}
                       </div>
 
-                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] font-mono font-bold text-slate-400">
-                        <span>Reading based on {currentEventRegs.length} joined candidates</span>
-                        <span className="text-indigo-600">Total Enrolled: {totalEnrolledStudents}</span>
+                      {/* Footer Summary */}
+                      <div className="pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono font-bold">
+                        <span className="text-slate-500 flex items-center gap-1.5">
+                          <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Reading from {currentEventRegs.length} joined candidate entries</span>
+                        </span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-slate-500">
+                            Tracks: <strong className="text-slate-800">{psStats.entries.length} Announced</strong>
+                          </span>
+                          <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 font-black">
+                            Total Participating: {totalEnrolledStudents} Students
+                          </span>
+                        </div>
                       </div>
                     </div>
                   ) : (
@@ -1835,97 +2370,330 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
                   )}
                 </div>
 
-                {/* 2. Problem Statement Distribution (Real Reading Donut Chart) */}
-                <div className="p-5 sm:p-6 rounded-[28px] glass-panel text-slate-900 space-y-4 flex flex-col">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <h2 className="text-sm sm:text-base font-black text-slate-900 tracking-tight flex items-center gap-2">
-                        <PieChart className="w-4 h-4 text-purple-600" />
-                        <span>PS Enrollment Reading</span>
-                      </h2>
-                      <p className="text-[11px] text-slate-600 font-medium leading-tight">Real student interest distribution by topic</p>
+                {/* 2. Problem Statement Distribution (Real Reading Circular Puzzle) */}
+                <div className="clay-card-3d p-6 sm:p-7 text-slate-900 space-y-4 flex flex-col justify-between relative overflow-hidden">
+                  {/* Header: Clock Icon + Title on Left, 2-Row Controls on Right */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200/60">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-white flex items-center justify-center text-indigo-600 shadow-[3px_4px_10px_rgba(160,175,205,0.35)] border border-white shrink-0">
+                        <Clock className="w-5 h-5 text-indigo-600" />
+                      </div>
+                      <div>
+                        <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-tight">
+                          PS Enrollment Reading
+                        </h3>
+                        <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
+                          5-partition circular puzzle • Sized by participating teams
+                        </p>
+                      </div>
                     </div>
-                    {psDonutSegments.length > 0 && (
-                      <span className="text-[10px] font-mono font-black px-2 py-1 rounded-lg bg-purple-100 text-purple-700 border border-purple-200">
-                        {psDonutSegments.length} Tracks
-                      </span>
-                    )}
-                  </div>
 
-                  {/* 3D Volumetric Glass Donut Ring computed from real PS data */}
-                  <div className="flex-1 flex flex-col items-center justify-center py-2 sm:py-4">
-                    <div className="relative w-44 h-44 sm:w-48 sm:h-48 flex items-center justify-center">
-                      <svg className="w-full h-full -rotate-90 drop-shadow-[0_0_12px_rgba(168,85,247,0.25)]" viewBox="0 0 36 36">
-                        <circle
-                          cx="18"
-                          cy="18"
-                          r="15.9155"
-                          fill="none"
-                          stroke="rgba(0, 0, 0, 0.04)"
-                          strokeWidth="4.2"
-                        />
-                        {psDonutSegments.length === 0 ? (
-                          <circle
-                            cx="18"
-                            cy="18"
-                            r="15.9155"
-                            fill="none"
-                            stroke="#f1f5f9"
-                            strokeWidth="4.2"
-                            strokeDasharray="100, 100"
-                          />
-                        ) : (
-                          psDonutSegments.map((s, idx) => (
-                            <motion.circle
-                              key={`donut-seg-${idx}`}
-                              initial={{ pathLength: 0 }}
-                              animate={{ pathLength: 1 }}
-                              transition={{ duration: 1, delay: idx * 0.1, ease: "easeOut" }}
-                              cx="18"
-                              cy="18"
-                              r="15.9155"
-                              fill="none"
-                              stroke={s.color}
-                              strokeWidth="4.2"
-                              strokeDasharray={s.dashArray}
-                              strokeDashoffset={s.dashOffset}
-                              strokeLinecap="round"
-                              className="transition-all duration-500"
-                            />
-                          ))
-                        )}
-                      </svg>
-                      
-                      {/* Central High-Gloss Analytics Backdrop */}
-                      <div className="absolute w-24 h-24 rounded-full glass-card flex flex-col items-center justify-center text-center shadow-[0_8px_20px_rgba(0,0,0,0.06)] border border-white/60">
-                        <span className="text-[9px] font-black text-slate-400 uppercase block tracking-tighter mb-0.5">TOTAL</span>
-                        <span className="text-3xl font-black text-slate-900 leading-none tracking-tight">
-                          {currentEventRegs.length}
-                        </span>
-                        <span className="text-[8px] font-bold text-indigo-600 mt-1">Registered</span>
+                    {/* Clay Controls: Teams vs Students Mode Switcher */}
+                    <div className="flex items-center shrink-0">
+                      <div className="clay-pill-inset p-1 flex items-center gap-1">
+                        <button
+                          onClick={() => setDonutMetricMode('teams')}
+                          className={`px-3 py-1 rounded-full text-[10px] sm:text-[11px] font-black transition-all cursor-pointer ${
+                            donutMetricMode === 'teams'
+                              ? 'clay-pill-raised text-indigo-700 shadow-xs'
+                              : 'text-slate-500 hover:text-slate-800'
+                          }`}
+                        >
+                          Teams ({psTotalTeamsDisplay})
+                        </button>
+                        <button
+                          onClick={() => setDonutMetricMode('students')}
+                          className={`px-3 py-1 rounded-full text-[10px] sm:text-[11px] font-black transition-all cursor-pointer ${
+                            donutMetricMode === 'students'
+                              ? 'clay-pill-raised text-purple-700 shadow-xs'
+                              : 'text-slate-500 hover:text-slate-800'
+                          }`}
+                        >
+                          Students ({psTotalDisplay})
+                        </button>
                       </div>
                     </div>
                   </div>
 
-                  {/* Dynamic PS Legend with Real Percents */}
-                  <div className="space-y-1.5 text-[10px] sm:text-xs font-bold pt-3 border-t border-slate-100 max-h-[160px] overflow-y-auto pr-2 custom-scrollbar">
-                    {psDonutSegments.length === 0 ? (
-                      <div className="text-center text-slate-400 py-6 italic text-[11px]">Waiting for event registration data...</div>
-                    ) : (
-                      psDonutSegments.map((s, idx) => (
-                        <div key={`legend-${idx}`} className="flex items-center justify-between text-slate-800 hover:bg-slate-50 p-1.5 rounded-xl transition-all border border-transparent hover:border-slate-100 group">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: s.color, boxShadow: `0 0 8px ${s.color}60` }} />
-                            <span className="truncate pr-1 group-hover:text-slate-950 transition-colors">{s.label}</span>
+                  {/* Circular Puzzle Partition SVG with Radial Dividers and Upright In-Arc Labels */}
+                  <div className="flex-1 flex flex-col items-center justify-center py-2 relative">
+                    <div className="relative w-64 h-64 sm:w-72 sm:h-72 flex items-center justify-center">
+                      <svg
+                        className="w-full h-full drop-shadow-[0_12px_28px_rgba(148,163,184,0.35)] overflow-visible"
+                        viewBox="0 0 360 360"
+                      >
+                        <defs>
+                          <filter id="clayDonutShadow" x="-30%" y="-30%" width="160%" height="160%">
+                            <feDropShadow dx="4" dy="8" stdDeviation="8" floodColor="#64748b" floodOpacity="0.32" />
+                            <feDropShadow dx="-2" dy="-2" stdDeviation="6" floodColor="#ffffff" floodOpacity="0.9" />
+                          </filter>
+                          <linearGradient id="clayPuffSheen" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.35" />
+                            <stop offset="50%" stopColor="#ffffff" stopOpacity="0.05" />
+                            <stop offset="100%" stopColor="#000000" stopOpacity="0.18" />
+                          </linearGradient>
+                        </defs>
+
+                        {/* Circular Puzzle Partition Slices with 3D Bevel */}
+                        {psDonutSegments.map((s, idx) => {
+                          const isHovered = hoveredSliceIdx === idx;
+                          return (
+                            <g key={`ps-group-${s.id || idx}`}>
+                              <motion.path
+                                d={s.path}
+                                fill={s.color}
+                                stroke="#ffffff"
+                                strokeWidth="4"
+                                strokeLinejoin="round"
+                                filter="url(#clayDonutShadow)"
+                                initial={{ opacity: 0, scale: 0.94 }}
+                                animate={{
+                                  opacity: hoveredSliceIdx === null || isHovered ? 1 : 0.65,
+                                  scale: isHovered ? 1.04 : 1,
+                                }}
+                                transition={{ duration: 0.25 }}
+                                className="cursor-pointer transition-all duration-200 origin-center"
+                                onMouseEnter={() => setHoveredSliceIdx(idx)}
+                                onMouseLeave={() => setHoveredSliceIdx(null)}
+                              >
+                                <title>{`${s.full}: ${s.teamsCount} Teams • ${s.count} Students (${s.percent}%)`}</title>
+                              </motion.path>
+                              {/* 3D Puffy Highlight Overlay */}
+                              <path
+                                d={s.path}
+                                fill="url(#clayPuffSheen)"
+                                stroke="none"
+                                className="pointer-events-none"
+                              />
+                            </g>
+                          );
+                        })}
+
+                        {/* In-Arc Text Labels (Short Problem Statement Title + Teams & Student Headcount) */}
+                        {psDonutSegments.map((s, idx) => {
+                          const sweepAngle = s.endAngle - s.startAngle;
+                          // Show in-arc label if slice sweep is at least 22 degrees
+                          if (sweepAngle < 22) return null;
+                          return (
+                            <g
+                              key={`ps-text-${s.id || idx}`}
+                              transform={`rotate(${s.textRot}, ${s.midX}, ${s.midY})`}
+                              className="pointer-events-none select-none"
+                            >
+                              <text
+                                x={s.midX}
+                                y={s.midY - 4}
+                                textAnchor="middle"
+                                fill="#ffffff"
+                                fontSize="9.5"
+                                fontWeight="900"
+                                className="font-mono tracking-tight"
+                                style={{
+                                  textShadow: '0 1px 3px rgba(0,0,0,0.85), 0 0 2px rgba(0,0,0,0.9)',
+                                }}
+                              >
+                                {s.short}
+                              </text>
+                              <text
+                                x={s.midX}
+                                y={s.midY + 8}
+                                textAnchor="middle"
+                                fill="#ffffff"
+                                fillOpacity="0.95"
+                                fontSize="8.5"
+                                fontWeight="800"
+                                className="font-mono"
+                                style={{
+                                  textShadow: '0 1px 3px rgba(0,0,0,0.85), 0 0 2px rgba(0,0,0,0.9)',
+                                }}
+                              >
+                                {s.teamsCount} {s.teamsCount === 1 ? 'Team' : 'Teams'} • {s.count} {s.count === 1 ? 'Std' : 'Stds'}
+                              </text>
+                            </g>
+                          );
+                        })}
+                      </svg>
+
+                      {/* Recessed Clay Well & Central Puzzle Hub: Total Participating Teams & Total Students Count */}
+                      <div className="absolute w-36 h-36 sm:w-40 sm:h-40 rounded-full bg-[#e8edf5] p-2 shadow-[inset_4px_4px_10px_rgba(160,175,205,0.55),inset_-4px_-4px_10px_rgba(255,255,255,1)] flex items-center justify-center pointer-events-none z-10">
+                        <div className="w-full h-full rounded-full bg-white flex flex-col items-center justify-center text-center shadow-[4px_6px_16px_rgba(160,175,205,0.35),inset_1.5px_1.5px_3px_rgba(255,255,255,1)] border border-white p-2">
+                          <span className="text-[7.5px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                            PARTICIPATION
+                          </span>
+
+                          <div className="flex items-center justify-center gap-2 sm:gap-2.5 my-1 w-full px-1">
+                            {/* TEAMS COUNT */}
+                            <div className={`flex flex-col items-center transition-all ${donutMetricMode === 'teams' ? 'scale-105' : 'opacity-90'}`}>
+                              <motion.span
+                                key={`teams-${psTotalTeamsDisplay}`}
+                                initial={{ scale: 0.85, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                className="text-2xl sm:text-3xl font-black text-blue-600 tracking-tight leading-none font-mono"
+                              >
+                                {psTotalTeamsDisplay}
+                              </motion.span>
+                              <span className="text-[8.5px] sm:text-[9px] font-black text-blue-600 uppercase tracking-tight mt-0.5">
+                                {psTotalTeamsDisplay === 1 ? 'Team' : 'Teams'}
+                              </span>
+                            </div>
+
+                            {/* Divider */}
+                            <div className="w-[1.5px] h-7 bg-slate-200/90 shrink-0" />
+
+                            {/* STUDENTS COUNT */}
+                            <div className={`flex flex-col items-center transition-all ${donutMetricMode === 'students' ? 'scale-105' : 'opacity-90'}`}>
+                              <motion.span
+                                key={`students-${psTotalDisplay}`}
+                                initial={{ scale: 0.85, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                className="text-2xl sm:text-3xl font-black text-pink-600 tracking-tight leading-none font-mono"
+                              >
+                                {psTotalDisplay}
+                              </motion.span>
+                              <span className="text-[8.5px] sm:text-[9px] font-black text-pink-600 uppercase tracking-tight mt-0.5">
+                                {psTotalDisplay === 1 ? 'Student' : 'Students'}
+                              </span>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2 ml-2 shrink-0">
-                            <span className="text-slate-400 font-mono text-[10px]">{s.count}</span>
-                            <span className="font-black text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded-md min-w-[38px] text-center">{s.percent}%</span>
+
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <span className="text-[7.5px] font-mono font-black text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200 shadow-2xs">
+                              Live Roster
+                            </span>
                           </div>
                         </div>
-                      ))
-                    )}
+                      </div>
+                    </div>
                   </div>
+
+                  {/* Decorative Sparkle Star in Bottom Right Corner */}
+                  <div className="absolute bottom-3 right-4 text-slate-300 pointer-events-none select-none text-2xl font-black">
+                    ✦
+                  </div>
+
+                  {/* Modal to configure announced problem statements for this event */}
+                  <AnimatePresence>
+                    {showEditPsModal && (
+                      <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.95 }}
+                          className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl border border-slate-100 space-y-4 text-slate-900"
+                        >
+                          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div className="flex items-center gap-2">
+                              <div className="p-2 rounded-xl bg-purple-100 text-purple-600">
+                                <PieChart className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <h3 className="text-base font-black text-slate-900">
+                                  Announced Problem Statements
+                                </h3>
+                                <p className="text-xs text-slate-500 font-medium">
+                                  {currentChartEvent?.title || 'Selected Event'}
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setShowEditPsModal(false)}
+                              className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center cursor-pointer transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
+                            {editPsList.map((ps, idx) => (
+                              <div key={idx} className="flex items-center gap-2">
+                                <span className="w-6 h-6 rounded-lg bg-indigo-50 text-indigo-600 text-xs font-mono font-black flex items-center justify-center shrink-0">
+                                  {idx + 1}
+                                </span>
+                                <input
+                                  type="text"
+                                  value={ps}
+                                  onChange={(e) => {
+                                    const updated = [...editPsList];
+                                    updated[idx] = e.target.value;
+                                    setEditPsList(updated);
+                                  }}
+                                  placeholder={`Problem Statement ${idx + 1}`}
+                                  className="flex-1 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                />
+                                {editPsList.length > 2 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditPsList(editPsList.filter((_, i) => i !== idx))}
+                                    className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 cursor-pointer"
+                                    title="Remove"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+
+                            <div className="flex gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => setEditPsList([...editPsList, ''])}
+                                className="flex-1 py-2 rounded-xl border border-dashed border-slate-300 text-slate-600 font-bold text-xs hover:border-indigo-400 hover:text-indigo-600 transition-colors cursor-pointer"
+                              >
+                                + Add Problem Statement
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditPsList([
+                                  'Smart Campus & EdTech (Software)',
+                                  'Agritech & IoT Integration (Hardware)',
+                                  'Disaster Management & Autonomous Systems (Hardware/AI)',
+                                  'Healthcare & Accessibility (Software/App)',
+                                  'Sustainability & Smart City (Software/Data)',
+                                ])}
+                                className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer transition-colors"
+                              >
+                                Reset 5 Official PS
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setShowEditPsModal(false)}
+                              className="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 font-bold text-xs hover:bg-slate-200 cursor-pointer"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const valid = editPsList.map((s) => s.trim()).filter(Boolean);
+                                if (valid.length === 0) {
+                                  showNotification('Please enter at least 1 problem statement.', 'danger');
+                                  return;
+                                }
+                                if (currentChartEvent) {
+                                  const updatedEvent = {
+                                    ...currentChartEvent,
+                                    problem_statements: valid,
+                                  };
+                                  const updatedEvents = saveEventProposal(updatedEvent);
+                                  setEventProposals(updatedEvents);
+                                }
+                                setShowEditPsModal(false);
+                                showNotification('Announced problem statements updated successfully!', 'success');
+                              }}
+                              className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md cursor-pointer transition-colors"
+                            >
+                              Save Problem Statements
+                            </button>
+                          </div>
+                        </motion.div>
+                      </div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
 

@@ -757,23 +757,36 @@ export default function PublicEventsSection({ onNavigateAuth }: PublicEventsSect
                     </span>
                   </div>
 
-                  {showRegModal.problem_statements && showRegModal.problem_statements.length > 0 && (
-                    <div>
-                      <label className="block text-[11px] font-mono uppercase font-bold text-slate-400 mb-1">
-                        Select Problem Statement <span className="text-rose-400">*</span>
-                      </label>
-                      <select
-                        required
-                        className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs sm:text-sm font-semibold focus:outline-none focus:border-cyan-400 cursor-pointer"
-                        onChange={(e) => setRegForm({...regForm, selected_problem_statement: e.target.value})}
-                      >
-                        <option value="">Select a problem statement</option>
-                        {showRegModal.problem_statements.map((ps, idx) => (
-                          <option key={idx} value={ps}>{ps}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
+                  {/* Problem Statement Selection (5 Official Problem Statements) */}
+                  {(() => {
+                    const psOptions = (showRegModal.problem_statements && showRegModal.problem_statements.length > 0)
+                      ? showRegModal.problem_statements
+                      : [
+                          'Smart Campus & EdTech (Software)',
+                          'Agritech & IoT Integration (Hardware)',
+                          'Disaster Management & Autonomous Systems (Hardware/AI)',
+                          'Healthcare & Accessibility (Software/App)',
+                          'Sustainability & Smart City (Software/Data)',
+                        ];
+                    return (
+                      <div>
+                        <label className="block text-[11px] font-mono uppercase font-bold text-slate-400 mb-1">
+                          Select Problem Statement <span className="text-rose-400">*</span>
+                        </label>
+                        <select
+                          required
+                          value={regForm.selected_problem_statement || ''}
+                          className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs sm:text-sm font-semibold focus:outline-none focus:border-cyan-400 cursor-pointer"
+                          onChange={(e) => setRegForm({...regForm, selected_problem_statement: e.target.value})}
+                        >
+                          <option value="">-- Choose Problem Statement --</option>
+                          {psOptions.map((ps, idx) => (
+                            <option key={idx} value={ps}>{idx + 1}. {ps}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })()}
 
                   <div className="pt-2 flex items-center justify-end gap-3">
                     <button

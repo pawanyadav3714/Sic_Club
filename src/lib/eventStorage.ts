@@ -486,6 +486,47 @@ export async function getEventRegistrations(eventId?: string): Promise<EventRegi
   return [];
 }
 
+export async function updateEventRegistration(
+  regId: string,
+  updates: Partial<EventRegistration>
+): Promise<EventRegistration[]> {
+  try {
+    const raw = localStorage.getItem('sic_event_registrations');
+    let list: EventRegistration[] = [];
+    if (raw) {
+      list = JSON.parse(raw);
+    }
+    const idx = list.findIndex((r) => r.id === regId || (updates.email && r.email?.toLowerCase() === updates.email?.toLowerCase()));
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...updates };
+      localStorage.setItem('sic_event_registrations', JSON.stringify(list));
+      try {
+        window.dispatchEvent(new CustomEvent('sic_event_registrations_updated', { detail: list }));
+      } catch (e) {}
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const dbUpdates: any = {};
+        if (updates.team_name !== undefined) dbUpdates.team_name = updates.team_name;
+        if (updates.registration_type !== undefined) dbUpdates.registration_type = updates.registration_type;
+        if (updates.status !== undefined) dbUpdates.status = updates.status;
+        if (updates.selected_problem_statement !== undefined) dbUpdates.selected_problem_statement = updates.selected_problem_statement;
+        if (updates.team_members !== undefined) dbUpdates.team_members = updates.team_members;
+
+        await supabase.from('event_registrations').update(dbUpdates).eq('id', regId);
+      } catch (e) {
+        console.warn('Supabase registration update warning:', e);
+      }
+    }
+
+    return list;
+  } catch (e) {
+    console.error('Failed to update registration:', e);
+    return getStoredEventRegistrations();
+  }
+}
+
 export async function registerForEvent(registration: {
   event_id: string;
   name: string;

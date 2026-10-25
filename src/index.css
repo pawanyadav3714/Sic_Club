@@ -689,5 +689,71 @@ input:-webkit-autofill:active {
   transform: translateY(1px);
 }
 
+.clay-item-panel {
+  background: #ffffff;
+  border-radius: 26px;
+  border: 2px solid #ffffff;
+  box-shadow: 
+    8px 12px 28px rgba(165, 180, 210, 0.4),
+    -4px -4px 14px rgba(255, 255, 255, 0.95),
+    inset 1px 1px 2px rgba(255, 255, 255, 0.9);
+}
+
+.clay-groove {
+  background: #e6ecf4;
+  border-radius: 9999px;
+  box-shadow: 
+    inset 2.5px 2.5px 5px rgba(160, 175, 205, 0.55),
+    inset -2.5px -2.5px 5px rgba(255, 255, 255, 1);
+}
+
+.clay-tube-purple {
+  background: linear-gradient(90deg, #7c3aed 0%, #9333ea 50%, #c084fc 100%);
+  border-radius: 9999px;
+  box-shadow: 
+    0 2px 6px rgba(147, 51, 234, 0.5),
+    inset 0 1.5px 2px rgba(255, 255, 255, 0.8),
+    inset 0 -1.5px 2px rgba(0, 0, 0, 0.2);
+}
+
+.clay-tube-cyan {
+  background: linear-gradient(90deg, #0284c7 0%, #06b6d4 50%, #38bdf8 100%);
+  border-radius: 9999px;
+  box-shadow: 
+    0 2px 6px rgba(2, 132, 199, 0.5),
+    inset 0 1.5px 2px rgba(255, 255, 255, 0.8),
+    inset 0 -1.5px 2px rgba(0, 0, 0, 0.2);
+}
+
+.clay-badge-blue {
+  background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%);
+  color: #ffffff;
+  border-radius: 9999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 
+    0 4px 10px rgba(29, 78, 216, 0.35),
+    inset 0 1.5px 2px rgba(255, 255, 255, 0.7);
+}
+
+.clay-badge-purple {
+  background: linear-gradient(180deg, #a855f7 0%, #7e22ce 100%);
+  color: #ffffff;
+  border-radius: 9999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 
+    0 4px 10px rgba(126, 34, 206, 0.35),
+    inset 0 1.5px 2px rgba(255, 255, 255, 0.7);
+}
+
+.clay-badge-cyan {
+  background: linear-gradient(180deg, #06b6d4 0%, #0e7490 100%);
+  color: #ffffff;
+  border-radius: 9999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 
+    0 4px 10px rgba(14, 116, 144, 0.35),
+    inset 0 1.5px 2px rgba(255, 255, 255, 0.7);
+}
+
 
 

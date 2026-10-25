@@ -674,7 +674,7 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
   return (
     <div className={`min-h-screen font-['Plus_Jakarta_Sans',sans-serif] selection:bg-emerald-500 selection:text-white relative overflow-x-hidden transition-colors duration-300 ${
       activeTab === 'chat'
-        ? 'bg-[#dbe4de] bg-[radial-gradient(#b8c8be_1.25px,transparent_1.25px)] [background-size:24px_24px] text-slate-800 p-1.5 sm:p-4 pb-20 sm:pb-6'
+        ? 'bg-[#dbe4de] bg-[radial-gradient(#b8c8be_1.25px,transparent_1.25px)] [background-size:24px_24px] text-slate-800 p-1.5 sm:p-4 pb-32 sm:pb-6'
         : 'bg-gradient-to-br from-[#eef2ff] via-[#f5f3ff] to-[#f0fdf4] text-slate-800 p-3 sm:p-5 lg:p-6 pb-28'
     }`}>
       

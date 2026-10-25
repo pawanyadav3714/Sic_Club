@@ -24,7 +24,7 @@ import {
 } from '../lib/supabase';
 import DirectChatWorkspace from '../components/DirectChatWorkspace';
 import EventProposalsManager from '../components/EventProposalsManager';
-import { getStoredEvents, saveEventProposal, getStoredEventRegistrations, getEventRegistrations, CATEGORY_LABELS } from '../lib/eventStorage';
+import { getStoredEvents, saveEventProposal, getStoredEventRegistrations, getEventRegistrations, updateEventRegistration, CATEGORY_LABELS } from '../lib/eventStorage';
 import { markMessagesAsDelivered, markUserPresence } from '../lib/chatStore';
 import {
   ShieldAlert,
@@ -130,6 +130,8 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
   const [hoveredSliceIdx, setHoveredSliceIdx] = useState<number | null>(null);
   const [showEditPsModal, setShowEditPsModal] = useState(false);
   const [editPsList, setEditPsList] = useState<string[]>([]);
+  
+
   
   // Multi-Core Council Management
   const [activeCoreUser, setActiveCoreUser] = useState<UserProfile>(() => fixProfileName(currentUser));
@@ -304,16 +306,26 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
               r.selected_problem_statement.toLowerCase().includes('hospital management') ||
               r.selected_problem_statement.toLowerCase().includes('smart campus automation') ||
               r.selected_problem_statement.toLowerCase().includes('hostel & mess');
-            if (isLegacy) {
+            const hasNoTeam = !r.team_name || r.team_name.trim() === '' || r.team_name.trim() === '-';
+            let nextTeam = r.team_name;
+            if (hasNoTeam && r.name) {
               updatedRegsAny = true;
-              const targetPS = idx === 0
-                ? 'Smart Campus & EdTech (Software)'
-                : idx === 1
-                ? 'Agritech & IoT Integration (Hardware)'
-                : (OFFICIAL_5_PS[idx % OFFICIAL_5_PS.length]);
+              nextTeam = `Team ${r.name.split(' ')[0]}`;
+            }
+
+            if (isLegacy || (hasNoTeam && r.name)) {
+              updatedRegsAny = true;
+              const targetPS = isLegacy
+                ? (idx === 0
+                  ? 'Smart Campus & EdTech (Software)'
+                  : idx === 1
+                  ? 'Agritech & IoT Integration (Hardware)'
+                  : (OFFICIAL_5_PS[idx % OFFICIAL_5_PS.length]))
+                : r.selected_problem_statement;
               return {
                 ...r,
                 selected_problem_statement: targetPS,
+                team_name: nextTeam,
               };
             }
             return r;
@@ -1255,7 +1267,7 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
       if (matchIdx >= 0) {
         entriesList[matchIdx].candidates += 1;
 
-        const isTeam = r.registration_type === 'team' || !!r.team_name || (Array.isArray(r.team_members) && r.team_members.length > 0);
+        const isTeam = r.registration_type === 'team';
         if (isTeam) {
           entriesList[matchIdx].teams += 1;
         } else {
@@ -1302,7 +1314,7 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
     let explicitTeams = 0;
     let soloEntries = 0;
     currentEventRegs.forEach((r) => {
-      const isTeam = r.registration_type === 'team' || !!r.team_name || (Array.isArray(r.team_members) && r.team_members.length > 0);
+      const isTeam = r.registration_type === 'team';
       if (isTeam) explicitTeams += 1;
       else soloEntries += 1;
     });
@@ -1439,6 +1451,8 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
     return totalEnrolledStudents;
   }, [psReadingMode, totalEnrolledStudents]);
 
+
+
   const handleExportExcelChart = () => {
     if (!currentChartEvent) return;
     const exportRows = currentEventRegs.map((r, idx) => {
@@ -1448,12 +1462,16 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
           .map((m, mIdx) => `${mIdx + 1}. ${m.name} (${m.registration_no || 'No Reg'}) [${m.branch || 'Branch'}]`)
           .join('; ');
       }
+      const exportedTeamName = r.team_name && r.team_name !== '-'
+        ? r.team_name
+        : (r.name ? `Team ${r.name.split(' ')[0]}` : '-');
+
       return {
         '#': idx + 1,
         'Event Title': currentChartEvent.title,
         'Category / Track': (r.category || currentChartEvent.category || '').toUpperCase(),
         'Registration Type': (r.registration_type || 'individual').toUpperCase(),
-        'Team Name': r.team_name || '-',
+        'Team Name': exportedTeamName,
         'Candidate / Team Leader': r.name,
         'Email Address': r.email,
         'Phone Number': r.phone_no || '-',
@@ -2111,191 +2129,193 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
                       </div>
                     </div>
                   ) : chartViewMode === 'ps' ? (
-                    <div className="space-y-4">
-                      {/* Top Bar: Title & High-Contrast Metric Pills */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-slate-100">
-                        <div className="flex items-center gap-2">
-                          <div className="p-2 rounded-xl bg-purple-100 text-purple-700 shadow-2xs">
-                            <PieChart className="w-4 h-4" />
+                    <div className="space-y-5">
+                      {/* Top Bar: 3D Clay Icon + Title & High-Contrast 3D Raised Badges */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200/60">
+                        <div className="flex items-center gap-3">
+                          <div className="w-11 h-11 rounded-2xl bg-white flex items-center justify-center text-purple-600 shadow-[3px_5px_12px_rgba(160,175,205,0.35)] border border-white shrink-0">
+                            <PieChart className="w-6 h-6 text-purple-600" />
                           </div>
                           <div>
-                            <span className="text-xs sm:text-sm font-black text-slate-900 tracking-tight block">
+                            <h3 className="text-base sm:text-lg lg:text-xl font-black text-slate-900 tracking-tight leading-tight">
                               Students vs Problem Statement Reading
-                            </span>
-                            <span className="text-[11px] text-slate-500 font-medium">
+                            </h3>
+                            <p className="text-xs text-slate-500 font-semibold mt-0.5">
                               Live participation headcounts across officially announced tracks
-                            </span>
+                            </p>
                           </div>
                         </div>
 
-                        {/* Summary Badges */}
+                        {/* Top Badges (matching image: 2 Teams blue, 3 Students purple, 2 Registrations cyan) */}
                         <div className="flex items-center gap-2 flex-wrap">
-                          <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-mono font-black shadow-2xs">
-                            <Users className="w-3.5 h-3.5 text-indigo-600" />
+                          <div className="clay-badge-blue px-3.5 py-1.5 text-xs font-black flex items-center gap-1.5 cursor-default">
+                            <Users className="w-3.5 h-3.5 text-blue-100" />
                             <span>{eventTeamBreakdown.teamsTotal} {eventTeamBreakdown.teamsTotal === 1 ? 'Team' : 'Teams'}</span>
                           </div>
-                          <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-purple-50 border border-purple-200 text-purple-700 text-xs font-mono font-black shadow-2xs">
-                            <GraduationCap className="w-3.5 h-3.5 text-purple-600" />
+                          <div className="clay-badge-purple px-3.5 py-1.5 text-xs font-black flex items-center gap-1.5 cursor-default">
+                            <GraduationCap className="w-3.5 h-3.5 text-purple-100" />
                             <span>{totalEnrolledStudents} {totalEnrolledStudents === 1 ? 'Student' : 'Students'}</span>
                           </div>
-                          <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-sky-50 border border-sky-200 text-sky-800 text-xs font-mono font-black shadow-2xs">
-                            <FileSpreadsheet className="w-3.5 h-3.5 text-sky-600" />
+                          <div className="clay-badge-cyan px-3.5 py-1.5 text-xs font-black flex items-center gap-1.5 cursor-default">
+                            <FileSpreadsheet className="w-3.5 h-3.5 text-cyan-100" />
                             <span>{currentEventRegs.length} Registrations</span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Problem Statements Cards List */}
-                      <div className="space-y-3 max-h-72 overflow-y-auto pr-1.5 custom-scrollbar">
-                        {psStats.entries.length === 0 ? (
-                          <div className="py-12 text-center text-xs text-slate-400 font-medium">
-                            No problem statement data available yet.
-                          </div>
-                        ) : (
-                          psStats.entries.map((entry, idx) => {
-                            const studentPct = totalEnrolledStudents > 0
-                              ? Math.round((entry.students / totalEnrolledStudents) * 100)
-                              : 0;
-                            const studentBarWidth = psStats.maxStudents > 0
-                              ? (entry.students / psStats.maxStudents) * 100
-                              : 0;
-                            const candidateBarWidth = psStats.maxCandidates > 0
-                              ? (entry.candidates / psStats.maxCandidates) * 100
-                              : 0;
+                      {/* Main List with custom clay scrollbar on right */}
+                      <div className="flex items-stretch gap-3">
+                        {/* Scrollable Cards Container */}
+                        <div className="flex-1 space-y-3.5 max-h-[340px] overflow-y-auto pr-1 custom-scrollbar">
+                          {psStats.entries.length === 0 ? (
+                            <div className="py-12 text-center text-xs text-slate-400 font-medium">
+                              No problem statement data available yet.
+                            </div>
+                          ) : (
+                            psStats.entries.map((entry, idx) => {
+                              const studentPct = totalEnrolledStudents > 0
+                                ? Math.round((entry.students / totalEnrolledStudents) * 100)
+                                : 0;
+                              const studentBarWidth = psStats.maxStudents > 0
+                                ? (entry.students / psStats.maxStudents) * 100
+                                : 0;
+                              const candidateBarWidth = psStats.maxCandidates > 0
+                                ? (entry.candidates / psStats.maxCandidates) * 100
+                                : 0;
 
-                            return (
-                              <div
-                                key={entry.trackNumber || idx}
-                                className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs hover:border-indigo-300 hover:shadow-xs transition-all space-y-2.5"
-                              >
-                                {/* Row 1: Track Number, Full Name, Count Badges */}
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                                    <span
-                                      className="w-6 h-6 rounded-lg text-white font-mono font-black text-xs flex items-center justify-center shrink-0 shadow-sm"
-                                      style={{ backgroundColor: entry.color }}
-                                    >
-                                      {idx + 1}
-                                    </span>
-                                    <div className="min-w-0">
-                                      <span className="font-extrabold text-slate-900 text-xs sm:text-sm block leading-snug">
+                              // Color badge style per track matching 3D spheres
+                              const sphereGradients = [
+                                'from-[#fb923c] to-[#ea580c]', // Orange
+                                'from-[#6366f1] to-[#4338ca]', // Indigo / Purple
+                                'from-[#38bdf8] to-[#0284c7]', // Cyan
+                                'from-[#22c55e] to-[#15803d]', // Green
+                                'from-[#ec4899] to-[#be185d]', // Pink
+                              ];
+                              const sphereGrad = sphereGradients[idx % sphereGradients.length];
+
+                              return (
+                                <div
+                                  key={entry.trackNumber || idx}
+                                  className="clay-item-panel p-4 sm:p-5 space-y-3.5"
+                                >
+                                  {/* Row 1: Number Sphere, Title, and Action Pills */}
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                                      <div className={`w-9 h-9 rounded-full bg-gradient-to-b ${sphereGrad} text-white font-mono font-black text-sm flex items-center justify-center shrink-0 shadow-[0_4px_10px_rgba(0,0,0,0.2),inset_0_2px_2px_rgba(255,255,255,0.7)]`}>
+                                        {idx + 1}
+                                      </div>
+                                      <span className="font-black text-slate-900 text-sm sm:text-base leading-snug">
                                         {entry.label}
                                       </span>
                                     </div>
+
+                                    {/* Right Side: Badges */}
+                                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto flex-wrap">
+                                      {/* Teams Badge */}
+                                      {entry.effectiveTeams > 0 ? (
+                                        <div className="clay-badge-blue px-3 py-1 font-black text-xs flex items-center gap-1.5 shadow-xs">
+                                          <Users className="w-3.5 h-3.5 text-blue-100" />
+                                          <span>{entry.effectiveTeams} {entry.effectiveTeams === 1 ? 'Team' : 'Teams'}</span>
+                                        </div>
+                                      ) : (
+                                        <div className="clay-groove px-3 py-1 font-bold text-xs text-slate-500 flex items-center gap-1.5">
+                                          <Users className="w-3.5 h-3.5 text-slate-400" />
+                                          <span>0 Teams</span>
+                                        </div>
+                                      )}
+
+                                      {/* Students Badge */}
+                                      {entry.students > 0 ? (
+                                        <div className="clay-badge-purple px-3 py-1 font-black text-xs flex items-center gap-1.5 shadow-xs">
+                                          <GraduationCap className="w-3.5 h-3.5 text-purple-100" />
+                                          <span>{entry.students} {entry.students === 1 ? 'Student' : 'Students'}</span>
+                                        </div>
+                                      ) : (
+                                        <div className="clay-groove px-3 py-1 font-bold text-xs text-slate-500 flex items-center gap-1.5">
+                                          <GraduationCap className="w-3.5 h-3.5 text-slate-400" />
+                                          <span>0 Students</span>
+                                        </div>
+                                      )}
+
+                                      {/* Percent Pill */}
+                                      <div className={`px-3 py-1 rounded-xl bg-gradient-to-b ${sphereGrad} text-white font-mono font-black text-xs min-w-[44px] text-center shadow-[0_4px_10px_rgba(0,0,0,0.18),inset_0_1.5px_2px_rgba(255,255,255,0.6)]`}>
+                                        {studentPct}%
+                                      </div>
+                                    </div>
                                   </div>
 
-                                  {/* Right side: High-visibility Count Pills */}
-                                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto flex-wrap">
-                                    {/* Teams Count Badge */}
-                                    <div
-                                      className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-mono font-black text-xs shadow-xs transition-all ${
-                                        entry.effectiveTeams > 0
-                                          ? 'bg-indigo-600 text-white shadow-indigo-200'
-                                          : 'bg-slate-100 text-slate-500 border border-slate-200/80 font-bold'
-                                      }`}
-                                      title={`${entry.effectiveTeams} participating teams in this problem statement track`}
-                                    >
-                                      <Users className="w-3.5 h-3.5" />
-                                      <span>{entry.effectiveTeams} {entry.effectiveTeams === 1 ? 'Team' : 'Teams'}</span>
+                                  {/* Row 2: Grooved Progress Bars */}
+                                  <div className="space-y-2 pt-1">
+                                    {/* Students Bar */}
+                                    <div className="flex items-center gap-2.5">
+                                      <span className="text-xs font-black text-slate-700 w-20 shrink-0 flex items-center gap-1.5">
+                                        <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 shadow-xs" />
+                                        <span>Students</span>
+                                      </span>
+                                      <div className="flex-1 h-3.5 clay-groove p-0.5 relative overflow-hidden flex items-center">
+                                        {entry.students > 0 && (
+                                          <motion.div
+                                            initial={{ width: 0 }}
+                                            animate={{ width: `${Math.max(studentBarWidth, 8)}%` }}
+                                            transition={{ duration: 0.8, ease: 'easeOut' }}
+                                            className="h-full clay-tube-purple"
+                                          />
+                                        )}
+                                      </div>
+                                      <span className="text-xs font-mono font-black text-slate-700 w-6 text-right">
+                                        {entry.students}
+                                      </span>
                                     </div>
 
-                                    {/* Students Count Badge */}
-                                    <div
-                                      className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-mono font-black text-xs shadow-xs transition-all ${
-                                        entry.students > 0
-                                          ? 'bg-purple-600 text-white shadow-purple-200'
-                                          : 'bg-slate-100 text-slate-500 border border-slate-200/80 font-bold'
-                                      }`}
-                                      title={`${entry.students} total enrolled students in this problem statement track`}
-                                    >
-                                      <GraduationCap className="w-3.5 h-3.5" />
-                                      <span>{entry.students} {entry.students === 1 ? 'Student' : 'Students'}</span>
+                                    {/* Entries Bar */}
+                                    <div className="flex items-center gap-2.5">
+                                      <span className="text-xs font-black text-slate-700 w-20 shrink-0 flex items-center gap-1.5">
+                                        <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 shadow-xs" />
+                                        <span>Entries</span>
+                                      </span>
+                                      <div className="flex-1 h-3.5 clay-groove p-0.5 relative overflow-hidden flex items-center">
+                                        {entry.candidates > 0 && (
+                                          <motion.div
+                                            initial={{ width: 0 }}
+                                            animate={{ width: `${Math.max(candidateBarWidth, 8)}%` }}
+                                            transition={{ duration: 0.9, ease: 'easeOut' }}
+                                            className="h-full clay-tube-cyan"
+                                          />
+                                        )}
+                                      </div>
+                                      <span className="text-xs font-mono font-black text-slate-700 w-6 text-right">
+                                        {entry.candidates}
+                                      </span>
                                     </div>
-
-                                    {/* Share of Event */}
-                                    <span
-                                      className="font-mono font-black text-white text-[10px] sm:text-[11px] px-2 py-1 rounded-md min-w-[40px] text-center shadow-2xs"
-                                      style={{ backgroundColor: entry.color }}
-                                      title={`${studentPct}% of total event participation`}
-                                    >
-                                      {studentPct}%
-                                    </span>
-                                  </div>
-                                </div>
-
-                                {/* Row 2: Dual Dynamic Progress Indicator */}
-                                <div className="space-y-1.5 pt-0.5">
-                                  {/* Students Bar */}
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[10px] font-mono font-bold text-slate-500 w-16 shrink-0 flex items-center gap-1">
-                                      <span className="w-2 h-2 rounded-full bg-indigo-600" />
-                                      <span>Students</span>
-                                    </span>
-                                    <div className="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200/70 shadow-inner relative">
-                                      <motion.div
-                                        initial={{ width: 0 }}
-                                        animate={{
-                                          width: entry.students > 0 ? `${Math.max(studentBarWidth, 6)}%` : '0%'
-                                        }}
-                                        transition={{ duration: 0.8, ease: 'easeOut' }}
-                                        className="h-full rounded-full shadow-xs"
-                                        style={{
-                                          background: entry.students > 0
-                                            ? 'linear-gradient(90deg, #4f46e5 0%, #818cf8 100%)'
-                                            : 'transparent'
-                                        }}
-                                      />
-                                    </div>
-                                    <span className="text-[10px] font-mono font-black text-indigo-700 w-8 text-right">
-                                      {entry.students}
-                                    </span>
-                                  </div>
-
-                                  {/* Candidates / Reg Forms Bar */}
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[10px] font-mono font-bold text-slate-400 w-16 shrink-0 flex items-center gap-1">
-                                      <span className="w-2 h-2 rounded-full bg-sky-400" />
-                                      <span>Entries</span>
-                                    </span>
-                                    <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50 shadow-inner relative">
-                                      <motion.div
-                                        initial={{ width: 0 }}
-                                        animate={{
-                                          width: entry.candidates > 0 ? `${Math.max(candidateBarWidth, 5)}%` : '0%'
-                                        }}
-                                        transition={{ duration: 0.9, ease: 'easeOut' }}
-                                        className="h-full rounded-full"
-                                        style={{
-                                          background: entry.candidates > 0
-                                            ? 'linear-gradient(90deg, #0284c7 0%, #38bdf8 100%)'
-                                            : 'transparent'
-                                        }}
-                                      />
-                                    </div>
-                                    <span className="text-[10px] font-mono font-bold text-slate-500 w-8 text-right">
-                                      {entry.candidates}
-                                    </span>
                                   </div>
                                 </div>
-                              </div>
-                            );
-                          })
-                        )}
+                              );
+                            })
+                          )}
+                        </div>
+
+                        {/* 3D Vertical Scroll Track (Clay Gutter & Thumb matching image) */}
+                        <div className="w-5 py-2 px-0.5 rounded-full bg-[#e6ecf4] shadow-[inset_2.5px_2.5px_5px_rgba(160,175,205,0.55),inset_-2.5px_-2.5px_5px_rgba(255,255,255,1)] flex flex-col items-center justify-between shrink-0 self-stretch my-1 select-none pointer-events-none">
+                          <span className="text-slate-400 text-[9px] font-black">▲</span>
+                          <div className="w-3.5 h-16 rounded-full bg-gradient-to-b from-slate-400 via-slate-500 to-slate-600 shadow-[2px_3px_6px_rgba(0,0,0,0.25),inset_1px_1px_2px_rgba(255,255,255,0.5)]" />
+                          <span className="text-slate-400 text-[9px] font-black">▼</span>
+                        </div>
                       </div>
 
                       {/* Footer Summary */}
-                      <div className="pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono font-bold">
-                        <span className="text-slate-500 flex items-center gap-1.5">
-                          <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                      <div className="pt-3 border-t border-slate-200/60 flex flex-wrap items-center justify-between gap-3 text-xs font-bold text-slate-700">
+                        <div className="flex items-center gap-2">
+                          <Check className="w-4 h-4 text-emerald-600 stroke-[3]" />
                           <span>Reading from {currentEventRegs.length} joined candidate entries</span>
-                        </span>
+                        </div>
                         <div className="flex items-center gap-3">
-                          <span className="text-slate-500">
-                            Tracks: <strong className="text-slate-800">{psStats.entries.length} Announced</strong>
+                          <span>
+                            Tracks: <strong className="text-slate-900 font-black">{psStats.entries.length} Announced</strong>
                           </span>
-                          <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 font-black">
-                            Total Participating: {totalEnrolledStudents} Students
-                          </span>
+                          <div className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-gradient-to-b from-[#e9d5ff] to-[#d8b4fe] text-purple-950 font-black text-xs border border-white shadow-[2px_4px_10px_rgba(192,132,252,0.35),inset_0_1.5px_2px_rgba(255,255,255,0.8)]">
+                            <span>Total Participating: {totalEnrolledStudents} Students</span>
+                            <span className="text-purple-400 text-xs">✦</span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -2335,26 +2355,39 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                               {currentEventRegs.map((r, idx) => {
-                                const isTeam = r.registration_type === 'team';
-                                const memberCount = isTeam && r.team_members ? r.team_members.length : 1;
+                                const hasExplicitTeamName = Boolean(r.team_name && r.team_name.trim() && r.team_name !== '-');
+                                 const isTeam = r.registration_type === 'team';
+                                const memberCount = (Array.isArray(r.team_members) && r.team_members.length > 0)
+                                  ? (r.team_members.some((m) => m.name && r.name && m.name.toLowerCase() === r.name.toLowerCase()) ? r.team_members.length : r.team_members.length + 1)
+                                  : 1;
+                                const displayName = hasExplicitTeamName
+                                  ? r.team_name!.trim()
+                                  : `Team ${r.name ? r.name.split(' ')[0] : 'Solo'}`;
+
+
                                 return (
                                   <tr key={r.id || idx} className="hover:bg-slate-50/80 transition-colors">
-                                    <td className="py-1.5 px-3 font-mono font-bold text-slate-400 border-r border-slate-100">{idx + 1}</td>
-                                    <td className="py-1.5 px-3 font-mono font-bold text-slate-800 border-r border-slate-100">{r.registration_no || '-'}</td>
-                                    <td className="py-1.5 px-3 font-bold text-slate-900 border-r border-slate-100 truncate max-w-[140px]">{r.name}</td>
-                                    <td className="py-1.5 px-3 border-r border-slate-100">
-                                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-black uppercase ${isTeam ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
-                                        {r.registration_type}
+                                    <td className="py-2 px-3 font-mono font-bold text-slate-400 border-r border-slate-100">{idx + 1}</td>
+                                    <td className="py-2 px-3 font-mono font-bold text-slate-800 border-r border-slate-100">{r.registration_no || '-'}</td>
+                                    <td className="py-2 px-3 font-bold text-slate-900 border-r border-slate-100 truncate max-w-[140px]">{r.name}</td>
+                                    <td className="py-2 px-3 border-r border-slate-100">
+                                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-mono font-black ${isTeam ? 'bg-emerald-100 text-emerald-800' : 'bg-purple-100 text-purple-800'}`}>
+                                        {isTeam ? 'Team' : 'Individual'}
                                       </span>
                                     </td>
-                                    <td className="py-1.5 px-3 font-medium text-slate-700 border-r border-slate-100 truncate max-w-[150px]">
-                                      {isTeam ? `${r.team_name || 'Team'} (${memberCount} mem)` : '-'}
+                                    <td className="py-2 px-3 font-medium text-slate-700 border-r border-slate-100 min-w-[180px]">
+                                      <div className="flex items-center gap-1.5 min-w-0">
+                                        <span className="font-black text-slate-900 text-xs truncate max-w-[130px]">{displayName}</span>
+                                        <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-md border border-slate-200/60 shrink-0">
+                                          {memberCount} mem
+                                        </span>
+                                      </div>
                                     </td>
-                                    <td className="py-1.5 px-3 text-slate-600 border-r border-slate-100 truncate max-w-[120px]">{r.branch || '-'}</td>
-                                    <td className="py-1.5 px-3 font-mono text-[10px] text-slate-500 border-r border-slate-100 whitespace-nowrap">
+                                    <td className="py-2 px-3 text-slate-600 border-r border-slate-100 truncate max-w-[120px]">{r.branch || '-'}</td>
+                                    <td className="py-2 px-3 font-mono text-[10px] text-slate-500 border-r border-slate-100 whitespace-nowrap">
                                       {r.registered_at ? new Date(r.registered_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
                                     </td>
-                                    <td className="py-1.5 px-3">
+                                    <td className="py-2 px-3">
                                       <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase ${r.status === 'confirmed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
                                         {r.status || 'confirmed'}
                                       </span>

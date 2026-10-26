@@ -1495,8 +1495,10 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
   };
 
   return (
-    <div className={`min-h-screen bg-gradient-to-br from-[#e6edf5] via-[#f2f4f8] to-[#e0f2fe] text-slate-800 flex font-['Plus_Jakarta_Sans',sans-serif] relative overflow-x-hidden selection:bg-purple-500 selection:text-slate-900 ${
-      activeTab === 'chat' ? 'p-1.5 sm:p-4 pb-20 sm:pb-6' : 'p-2 sm:p-4 pb-28'
+    <div className={`bg-gradient-to-br from-[#e6edf5] via-[#f2f4f8] to-[#e0f2fe] text-slate-800 flex font-['Plus_Jakarta_Sans',sans-serif] relative selection:bg-purple-500 selection:text-slate-900 ${
+      activeTab === 'chat'
+        ? 'h-[100dvh] max-h-[100dvh] overflow-hidden p-1.5 pb-[76px] md:p-4 md:pb-4'
+        : 'min-h-screen overflow-x-hidden p-2 sm:p-4 pb-28'
     }`}>
       {/* Glassmorphism Background Ambient Mesh Orbs */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
@@ -3585,7 +3587,7 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
 
           {/* TAB 8: WHATSAPP CHAT INLINE VIEW (CLAYMORPHISM 3D CARD) */}
           {activeTab === 'chat' && (
-            <div className="w-full h-full flex-1 min-h-0 rounded-[28px] sm:rounded-[38px] overflow-hidden flex flex-col clay-container border-4 sm:border-[6px] border-[#eaf1ec] shadow-[20px_24px_48px_rgba(145,170,158,0.5),-16px_-16px_36px_rgba(255,255,255,0.95)]">
+            <div className="w-full h-full flex-1 min-h-0 rounded-[28px] sm:rounded-[38px] overflow-hidden flex flex-col clay-container border-4 sm:border-[6px] border-[#eaf1ec] shadow-[20px_24px_48px_rgba(145,170,158,0.5),-16px_-16px_36px_rgba(255,255,255,0.95)] pb-[88px] sm:pb-0">
               <DirectChatWorkspace
                 currentUser={currentUser}
                 studentMembers={approvedMembers}

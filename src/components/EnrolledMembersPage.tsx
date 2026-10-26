@@ -604,7 +604,8 @@ export default function EnrolledMembersPage({
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-7 max-w-6xl mx-auto w-full justify-items-center">
           {filteredRegistrations.map((reg, index) => {
-            const isTeam = reg.registration_type === 'team';
+            const regType = (reg.registration_type || 'individual').toLowerCase().trim();
+            const isTeam = regType === 'team';
 
             if (isTeam) {
               /* ==============================================================
@@ -624,7 +625,7 @@ export default function EnrolledMembersPage({
                       <h3 className="text-lg sm:text-2xl font-black text-[#064e3b] tracking-tight">
                         Team Registration
                       </h3>
-                      <span className="px-3 py-1 sm:px-4 sm:py-1.5 rounded-full text-[10px] sm:text-xs font-black uppercase tracking-wider bg-[#bbf7d0] text-[#047857] shadow-inner border border-[#86efac]/80">
+                      <span className="px-3.5 py-1.5 sm:px-5 sm:py-2 rounded-full text-xs sm:text-sm font-black uppercase tracking-wider bg-[#bbf7d0] text-[#047857] shadow-inner border border-[#86efac]/80">
                         TEAM
                       </span>
                     </div>
@@ -859,7 +860,7 @@ export default function EnrolledMembersPage({
                     <h3 className="text-lg sm:text-2xl font-black text-[#1e1b4b] tracking-tight">
                       Individual Registration
                     </h3>
-                    <span className="px-3 py-1 sm:px-4 sm:py-1.5 rounded-full text-[10px] sm:text-xs font-black uppercase tracking-wider bg-[#ffd9e8] text-[#be185d] shadow-inner border border-[#f472b6]/70">
+                    <span className="px-3.5 py-1.5 sm:px-5 sm:py-2 rounded-full text-xs sm:text-sm font-black uppercase tracking-wider bg-[#ffd9e8] text-[#be185d] shadow-inner border border-[#f472b6]/70">
                       INDIVIDUAL
                     </span>
                   </div>

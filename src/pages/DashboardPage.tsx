@@ -1235,7 +1235,7 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
 
           {/* TAB 4: WHATSAPP CHAT INLINE VIEW (CLAYMORPHISM 3D CARD) */}
           {activeTab === 'chat' && (
-            <div className="w-full h-full flex-1 min-h-0 rounded-[28px] sm:rounded-[38px] overflow-hidden flex flex-col clay-container border-4 sm:border-[6px] border-[#eaf1ec] shadow-[20px_24px_48px_rgba(145,170,158,0.5),-16px_-16px_36px_rgba(255,255,255,0.95)]">
+            <div className="w-full h-full flex-1 min-h-0 rounded-[28px] sm:rounded-[38px] overflow-hidden flex flex-col clay-container border-4 sm:border-[6px] border-[#eaf1ec] shadow-[20px_24px_48px_rgba(145,170,158,0.5),-16px_-16px_36px_rgba(255,255,255,0.95)] pb-[88px] sm:pb-0">
               <DirectChatWorkspace
                 currentUser={currentUser}
                 studentMembers={registeredStudents}

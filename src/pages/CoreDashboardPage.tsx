@@ -1283,9 +1283,8 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
       }
     });
 
-    const anyExplicitTeams = entriesList.some((e) => e.teams > 0);
     entriesList.forEach((e) => {
-      e.effectiveTeams = anyExplicitTeams ? e.teams : e.candidates;
+      e.effectiveTeams = e.candidates;
     });
 
     const maxStudents = Math.max(...entriesList.map((e) => e.students), 1);
@@ -1318,7 +1317,7 @@ export default function CoreDashboardPage({ currentUser, onNavigate, onLogout }:
       if (isTeam) explicitTeams += 1;
       else soloEntries += 1;
     });
-    const teamsTotal = explicitTeams > 0 ? explicitTeams : currentEventRegs.length;
+    const teamsTotal = currentEventRegs.length > 0 ? currentEventRegs.length : 1;
     return {
       explicitTeams,
       soloEntries,

@@ -7,6 +7,7 @@ interface BottomNavProps {
 }
 
 export default function BottomNav({ currentRoute, onNavigate }: BottomNavProps) {
+  if (currentRoute === 'chat') return null;
   return (
     <div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#030712]/90 backdrop-blur-lg border-t border-cyan-900/30 p-2 z-50 flex justify-around">
       <button onClick={() => onNavigate('dashboard')} className={`p-3 rounded-xl ${currentRoute === 'dashboard' ? 'text-cyan-400' : 'text-slate-500'}`}>

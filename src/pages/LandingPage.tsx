@@ -54,7 +54,7 @@ export default function LandingPage({ onNavigate, currentUser, onLogout, onLogin
             playsInline
             className="w-full h-full object-cover opacity-50 absolute inset-0 z-0"
           >
-            <source src="/rover1.mp4" type="video/mp4" />
+            <source src="/assets/aistudio/gemini_generated_video_5c3bfa96_e1513a73.mp4" type="video/mp4" />
           </video>
           <div className="absolute inset-0 bg-gradient-to-t from-[#030712] via-transparent to-[#030712] pointer-events-none z-10" />
 
@@ -423,7 +423,7 @@ export default function LandingPage({ onNavigate, currentUser, onLogout, onLogin
                   playsInline
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                 >
-                  <source src="/rover1.mp4" type="video/mp4" />
+                  <source src="/assets/aistudio/gemini_generated_video_5c3bfa96_e1513a73.mp4" type="video/mp4" />
                 </video>
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
               </div>

@@ -1235,7 +1235,7 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
 
           {/* TAB 4: WHATSAPP CHAT INLINE VIEW (CLAYMORPHISM 3D CARD) */}
           {activeTab === 'chat' && (
-            <div className="w-full h-full flex-1 min-h-0 rounded-[28px] sm:rounded-[38px] overflow-hidden flex flex-col clay-container border-4 sm:border-[6px] border-[#eaf1ec] shadow-[20px_24px_48px_rgba(145,170,158,0.5),-16px_-16px_36px_rgba(255,255,255,0.95)] pb-[88px] sm:pb-0">
+            <div className="w-full h-full flex-1 min-h-0 rounded-[28px] sm:rounded-[38px] overflow-hidden flex flex-col clay-container border-4 sm:border-[6px] border-[#eaf1ec] shadow-[20px_24px_48px_rgba(145,170,158,0.5),-16px_-16px_36px_rgba(255,255,255,0.95)]">
               <DirectChatWorkspace
                 currentUser={currentUser}
                 studentMembers={registeredStudents}
@@ -1848,7 +1848,8 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
       </AnimatePresence>
 
       {/* 3D CLAYMORPHISM FLOATING BOTTOM NAVIGATION BAR FOR STUDENTS (MOBILE/PORTRAIT) */}
-      <div className="lg:hidden fixed bottom-2.5 left-3 right-3 z-40 clay-pill bg-[#eef2f9]/95 backdrop-blur-2xl border border-white py-1 px-2 flex items-center justify-around shadow-[0_12px_28px_rgba(150,165,205,0.38)] max-w-md mx-auto">
+      {activeTab !== 'chat' && (
+        <div className="lg:hidden fixed bottom-2.5 left-3 right-3 z-40 clay-pill bg-[#eef2f9]/95 backdrop-blur-2xl border border-white py-1 px-2 flex items-center justify-around shadow-[0_12px_28px_rgba(150,165,205,0.38)] max-w-md mx-auto">
         <button
           onClick={() => setActiveTab('portal')}
           className={`flex flex-col items-center gap-0.5 px-2.5 py-0.5 rounded-xl transition-all cursor-pointer ${
@@ -1909,16 +1910,13 @@ export default function DashboardPage({ currentUser, onNavigate, onLogout }: Das
 
         <button
           onClick={() => setActiveTab('chat')}
-          className={`flex flex-col items-center gap-0.5 px-2.5 py-0.5 rounded-xl transition-all cursor-pointer ${
-            activeTab === 'chat' 
-              ? 'bg-[#d1fae5] text-emerald-800 font-black shadow-[inset_2px_2px_4px_rgba(16,185,129,0.3),inset_-2px_-2px_4px_rgba(255,255,255,0.8)]' 
-              : 'text-slate-600 font-bold hover:text-slate-900'
-          }`}
+          className="flex flex-col items-center gap-0.5 px-2.5 py-0.5 rounded-xl transition-all cursor-pointer text-slate-600 font-bold hover:text-slate-900"
         >
           <MessagesSquare className="w-4 h-4 text-emerald-600" />
           <span className="text-[9px] font-bold leading-none">Chat</span>
         </button>
       </div>
+      )}
 
     </div>
   );

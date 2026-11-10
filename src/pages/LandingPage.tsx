@@ -9,6 +9,7 @@ import MacbookScrollSection from '../components/ui/MacbookScrollSection';
 import TechStackCarousel from '../components/TechStackCarousel';
 import PublicEventsSection from '../components/PublicEventsSection';
 import DynamicLobbyNoticeTicker from '../components/DynamicLobbyNoticeTicker';
+import { PWAInstallButton } from '../components/PWAInstallButton';
 
 function SparkleStar({ className = "w-6 h-6" }: { className?: string }) {
   return (
@@ -66,7 +67,8 @@ export default function LandingPage({ onNavigate, currentUser, onLogout, onLogin
             </div>
 
             {/* Top-Right Floating Auth & Admin Buttons */}
-            <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
+            <div className="flex items-center gap-1 sm:gap-2.5 shrink-0 pointer-events-auto">
+              <PWAInstallButton />
               {!currentUser ? (
                 <>
                   {/* Admin Portal Button - Visible for guests */}

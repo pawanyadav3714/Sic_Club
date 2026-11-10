@@ -1075,7 +1075,7 @@ export default function DirectChatWorkspace({
       {/* ========================================================= */}
       {/* 2. MAIN CHATS WORKSPACE (TWO-COLUMN DESKTOP / MOBILE SWITCHER) */}
       {/* ========================================================= */}
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 overflow-hidden bg-white relative">
+      <div className="flex-1 h-full min-h-0 grid grid-cols-1 lg:grid-cols-12 overflow-hidden bg-white relative">
           
           {/* ========================================================= */}
           {/* LEFT PANEL: WHATSAPP CONTACT LIST (OPTIMIZED DENSITY & FULL SCROLL) */}
@@ -1250,14 +1250,14 @@ export default function DirectChatWorkspace({
           {/* RIGHT PANEL: ACTIVE CONVERSATION SCREEN */}
           {/* ========================================================= */}
           <div
-            className={`lg:col-span-8 flex flex-col min-h-0 bg-[#e2ebe5] relative ${
+            className={`lg:col-span-8 flex flex-col h-full min-h-0 overflow-hidden bg-[#e2ebe5] relative ${
               mobileViewMode === 'list' ? 'hidden lg:flex' : 'flex'
             }`}
           >
             {activePeer ? (
               <>
                 {/* Active Chat Conversation Top Header Bar (CLAYMORPHISM 3D) */}
-                <div className="px-3.5 sm:px-5 py-3 clay-header text-white flex items-center justify-between shrink-0 z-20">
+                <div className="px-3.5 sm:px-5 py-3 clay-header text-white flex items-center justify-between shrink-0 flex-shrink-0 z-20">
                   <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
                     {/* Back Button */}
                     <button
@@ -1622,7 +1622,7 @@ export default function DirectChatWorkspace({
                 {/* ========================================================= */}
                 <form
                   onSubmit={handleSendMessage}
-                  className="p-2.5 sm:p-3.5 clay-input-bar rounded-b-[24px] sm:rounded-b-[34px] flex items-center gap-2 sm:gap-3 shrink-0 z-10"
+                  className="p-2.5 sm:p-3.5 clay-input-bar rounded-b-[24px] sm:rounded-b-[34px] flex items-center gap-2 sm:gap-3 shrink-0 flex-shrink-0 z-10"
                 >
                   {/* Sunken Rounded Input Capsule */}
                   <div className="flex-1 clay-input-capsule rounded-full px-3.5 py-2 sm:py-2.5 flex items-center gap-2 sm:gap-2.5">

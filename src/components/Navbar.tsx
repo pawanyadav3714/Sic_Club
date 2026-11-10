@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Atom, LogOut, Menu, X, MessageSquare, Rocket } from 'lucide-react';
 import Logo from './ui/Logo';
 import { UserProfile } from '../types';
-import { PWAInstallButton } from './PWAInstallButton';
 
 interface NavbarProps {
   currentUser: UserProfile | null;
@@ -36,7 +35,6 @@ export default function Navbar({
 
         {/* Actions & Utilities */}
         <div className="hidden lg:flex items-center gap-3">
-          <PWAInstallButton />
           {currentUser ? (
             <div className="relative pl-2 border-l border-slate-800">
               <div 
@@ -131,9 +129,6 @@ export default function Navbar({
       {/* Mobile Menu Dropdown */}
       {mobileMenuOpen && (
         <div className="lg:hidden bg-slate-900 border-b border-slate-800 px-4 pt-4 pb-6 space-y-3">
-          <div className="pb-2 border-b border-slate-800 flex justify-center">
-            <PWAInstallButton />
-          </div>
           <button
             onClick={() => { onNavigate('landing'); setMobileMenuOpen(false); }}
             className="block w-full text-left py-2 text-cyan-400 font-medium"
